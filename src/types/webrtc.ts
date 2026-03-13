@@ -16,6 +16,17 @@ export interface TransferProgress {
   bytesTransferred: number;
   totalBytes: number;
   speed: number; // bytes per second
+  eta: number | null; // estimated seconds remaining
 }
 
 export type ConnectionStatus = 'Disconnected' | 'Connecting' | 'Connected' | 'Error';
+
+export interface TransferHistoryItem {
+  id: string;
+  fileName: string;
+  fileSize: number;
+  timestamp: number;
+  status: 'completed' | 'failed';
+  type: 'sent' | 'received';
+  peerName?: string;
+}

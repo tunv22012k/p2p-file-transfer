@@ -4,6 +4,7 @@ import { RTC_ICE_SERVERS, CHUNK_SIZE, MAX_BUFFERED_AMOUNT } from '@/lib/webrtc-c
 import { ConnectionStatus, FileMetadata, TransferProgress } from '@/types/webrtc';
 import { encryptChunk, decryptChunk, generateKeyString, importKeyString } from '@/lib/crypto';
 import { toast } from 'sonner';
+import { historyUtil } from '@/lib/history';
 
 // Adjust this URL to your signaling server address when deploying
 const SIGNALING_SERVER_URL = 'http://localhost:3001';
@@ -66,6 +67,8 @@ export function useWebRTC() {
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
   const remotePeerIdRef = useRef<string | null>(null);
+  const lastSentFileNameRef = useRef<string | null>(null);
+  const lastSentFileSizeRef = useRef<number | null>(null);
   const cryptoKeyRef = useRef<CryptoKey | null>(null);
 
   // Transfer state
@@ -83,6 +86,8 @@ export function useWebRTC() {
     remotePeerIdRef.current = null;
     cryptoKeyRef.current = null;
     isTransferringRef.current = false;
+    lastSentFileNameRef.current = null;
+    lastSentFileSizeRef.current = null;
   }, []);
 
   const setupDataChannel = useCallback((channel: RTCDataChannel) => {
@@ -145,12 +150,15 @@ export function useWebRTC() {
             const now = Date.now();
             const elapsed = (now - transferStartTime.current) / 1000;
             const currentSpeed = elapsed > 0 ? receivedSizeRef.current / elapsed : 0;
+            const remainingBytes = receiveMetadataRef.current.size - receivedSizeRef.current;
+            const eta = currentSpeed > 0 ? remainingBytes / currentSpeed : null;
 
             setProgress({
               progress: (receivedSizeRef.current / receiveMetadataRef.current.size) * 100,
               bytesTransferred: receivedSizeRef.current,
               totalBytes: receiveMetadataRef.current.size,
               speed: currentSpeed,
+              eta,
             });
 
             if (receivedSizeRef.current >= receiveMetadataRef.current.size) {
@@ -167,15 +175,63 @@ export function useWebRTC() {
               if (channel.readyState === 'open') {
                 channel.send(JSON.stringify({ type: 'done' }));
               }
-              // Bug 1: Reset PC so next transfer creates a fresh connection
+              // Log history
+              historyUtil.addEntry({
+                fileName: receiveMetadataRef.current.name,
+                fileSize: receiveMetadataRef.current.size,
+                status: 'completed',
+                type: 'received',
+                peerName: remotePeerIdRef.current || 'Unknown',
+              });
+
               resetPeerConnection();
               toast.success('Tải file hoàn tất!');
             }
           } catch (err) {
             console.error('Failed to decrypt or write chunk:', err);
             isTransferringRef.current = false;
+
+            // Log failed transfer
+            if (receiveMetadataRef.current) {
+              historyUtil.addEntry({
+                fileName: receiveMetadataRef.current.name,
+                fileSize: receiveMetadataRef.current.size,
+                status: 'failed',
+                type: 'received',
+                peerName: remotePeerIdRef.current || 'Unknown',
+              });
+            }
+
             channel.close();
           }
+        }
+      } else if (typeof event.data === 'string') {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'cancel') {
+          isTransferringRef.current = false;
+          setIsReceiving(false);
+          setProgress(null);
+
+          if (receiveBufferRef.current) {
+            const writer = receiveBufferRef.current;
+            if ('abort' in writer && typeof writer.abort === 'function') {
+              writer.abort().catch(() => { });
+            }
+            receiveBufferRef.current = null;
+          }
+
+          if (receiveMetadataRef.current) {
+            historyUtil.addEntry({
+              fileName: receiveMetadataRef.current.name,
+              fileSize: receiveMetadataRef.current.size,
+              status: 'failed',
+              type: 'received',
+              peerName: remotePeerIdRef.current || 'Unknown',
+            });
+          }
+
+          toast.error('Người gửi đã hủy truyền file.');
+          resetPeerConnection();
         }
       }
     };
@@ -238,11 +294,21 @@ export function useWebRTC() {
 
     // Room functionality
     socketRef.current.on('room-users', (users: { id: string; username: string }[]) => {
-      setRoomUsers(users);
+      setRoomUsers((prevUsers) => {
+        // Filter out any duplicates that might occur if a user reconnects quickly
+        const uniqueUsers = new Map<string, { id: string; username: string }>();
+        users.forEach(user => uniqueUsers.set(user.id, user));
+        return Array.from(uniqueUsers.values());
+      });
     });
 
     socketRef.current.on('peer-joined', (data: { id: string; username: string }) => {
-      setRoomUsers((prev) => [...prev, data]);
+      setRoomUsers((prev) => {
+        if (!prev.some(u => u.id === data.id)) {
+          return [...prev, data];
+        }
+        return prev;
+      });
     });
 
     socketRef.current.on('peer-left', (peerId: string) => {
@@ -465,6 +531,9 @@ export function useWebRTC() {
       type: file.type,
     };
 
+    lastSentFileNameRef.current = file.name;
+    lastSentFileSizeRef.current = file.size;
+
     // If no key is set (e.g. Room sharing), generate one for this transfer
     let shareKeyStr = '';
     if (!cryptoKeyRef.current) {
@@ -584,12 +653,15 @@ export function useWebRTC() {
           const now = Date.now();
           const elapsed = (now - start) / 1000;
           const currentSpeed = elapsed > 0 ? offset / elapsed : 0;
+          const remainingBytes = file.size - offset; // Use file.size for accuracy on sender side
+          const eta = currentSpeed > 0 ? remainingBytes / currentSpeed : null;
 
           setProgress({
             progress: (offset / (file.size + (file.size / CHUNK_SIZE) * 28)) * 100,
             bytesTransferred: offset,
             totalBytes: file.size,
             speed: currentSpeed,
+            eta,
           });
         }
       }
@@ -597,6 +669,16 @@ export function useWebRTC() {
       const error = e as Error;
       isTransferringRef.current = false;
       setProgress(null);
+
+      // Log failed transfer
+      historyUtil.addEntry({
+        fileName: file.name,
+        fileSize: file.size,
+        status: 'failed',
+        type: 'sent',
+        peerName: remotePeerIdRef.current || 'Unknown',
+      });
+
       toast.error(`Lỗi khi gửi file: ${error.message}`);
       resetPeerConnection();
       return;
@@ -657,10 +739,63 @@ export function useWebRTC() {
 
     // Done sending — reset for next transfer
     isTransferringRef.current = false;
+    // Log history
+    historyUtil.addEntry({
+      fileName: file.name,
+      fileSize: file.size,
+      status: 'completed',
+      type: 'sent',
+      peerName: remotePeerIdRef.current || 'Unknown',
+    });
+
     setProgress(null);
     resetPeerConnection();
     toast.success('Gửi file thành công! Người nhận đã nhận đầy đủ.');
   }, [resetPeerConnection]);
+
+  const cancelTransfer = useCallback(() => {
+    if (!isTransferringRef.current && !isReceiving) {
+      return;
+    }
+
+    // Signal other peer
+    if (dcRef.current && dcRef.current.readyState === 'open') {
+      try {
+        dcRef.current.send(JSON.stringify({ type: 'cancel' }));
+      } catch (e) {
+        console.error('Failed to send cancel message', e);
+      }
+    }
+
+    // Log failure
+    const fileName = isReceiving ? receiveMetadataRef.current?.name : lastSentFileNameRef.current;
+    const fileSize = isReceiving ? receiveMetadataRef.current?.size : lastSentFileSizeRef.current;
+
+    if (fileName && fileSize) {
+      historyUtil.addEntry({
+        fileName,
+        fileSize,
+        status: 'failed',
+        type: isReceiving ? 'received' : 'sent',
+        peerName: remotePeerIdRef.current || 'Unknown',
+      });
+    }
+
+    // Abort writing if receiving
+    if (receiveBufferRef.current) {
+      const writer = receiveBufferRef.current;
+      if ('abort' in writer && typeof writer.abort === 'function') {
+        writer.abort().catch(() => { });
+      }
+      receiveBufferRef.current = null;
+    }
+
+    isTransferringRef.current = false;
+    setIsReceiving(false);
+    setProgress(null);
+    resetPeerConnection();
+    toast.info('Đã hủy truyền file.');
+  }, [isReceiving, resetPeerConnection]);
 
   return {
     myId,
@@ -678,5 +813,6 @@ export function useWebRTC() {
     setCryptoKey,
     incomingFileMetadata,
     acceptFileTransfer,
+    cancelTransfer,
   };
 }

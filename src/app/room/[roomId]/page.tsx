@@ -1,7 +1,8 @@
 'use client';
 
 import { useWebRTC } from '@/hooks/useWebRTC';
-import { Users, FileUp, Loader2, User, ArrowLeft, Check, X } from 'lucide-react';
+import { Users, FileUp, Loader2, User, ArrowLeft, Check, X, Download } from 'lucide-react';
+import TransferHistory from '@/components/TransferHistory';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState, Suspense } from 'react';
@@ -12,7 +13,7 @@ function RoomContent() {
     myId, status, progress, sendFile,
     joinRoom, leaveRoom, roomUsers, requestFileSend,
     incomingRequest, answerFileRequest,
-    isReceiving
+    isReceiving, cancelTransfer, incomingFileMetadata, acceptFileTransfer
   } = useWebRTC();
 
   const pathname = usePathname();
@@ -68,6 +69,32 @@ function RoomContent() {
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       setFileToShare(e.dataTransfer.files[0]);
     }
+  };
+
+  const formatETA = (seconds: number | null) => {
+    if (seconds === null || seconds === Infinity) {
+      return 'Đang tính...';
+    }
+    if (seconds < 1) {
+      return 'Xong';
+    }
+
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+
+    const parts = [];
+    if (h > 0) {
+      parts.push(`${h}h`);
+    }
+    if (m > 0) {
+      parts.push(`${m}m`);
+    }
+    if (s > 0 || parts.length === 0) {
+      parts.push(`${s}s`);
+    }
+
+    return `Còn khoảng ${parts.join(' ')}`;
   };
 
   const handleSendRequest = async () => {
@@ -153,8 +180,8 @@ function RoomContent() {
                     key={user.id}
                     onClick={() => setSelectedUser(user.id)}
                     className={`p-3 rounded-xl cursor-pointer flex items-center justify-between transition-all border ${selectedUser === user.id
-                        ? 'border-purple-500 bg-purple-500/20'
-                        : 'border-transparent bg-black/20 hover:bg-white/10'
+                      ? 'border-purple-500 bg-purple-500/20'
+                      : 'border-transparent bg-black/20 hover:bg-white/10'
                       }`}
                   >
                     <div className="flex items-center">
@@ -166,42 +193,63 @@ function RoomContent() {
               </ul>
             )}
           </div>
+
+          <div className="md:h-[400px]">
+            <TransferHistory />
+          </div>
         </div>
 
         {/* Right Column: Transfer Interface */}
         <div className="flex-1 bg-white/5 border border-white/10 rounded-3xl p-6 md:p-10 flex flex-col">
           {isReceiving ? (
             <div className="flex-1 flex flex-col justify-center">
-              <h2 className="text-2xl font-bold mb-6 text-center text-emerald-400">
-                📥 Đang nhận file...
-              </h2>
-              {progress ? (
-                <div className="mt-8 bg-black/20 p-8 rounded-2xl border border-white/5">
-                  <div className="mb-4 flex items-center justify-between">
-                    <span className="text-sm font-medium text-emerald-400 flex items-center">
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Đang truyền...
-                    </span>
-                    <span className="text-sm font-bold text-white">{progress.progress.toFixed(1)}%</span>
-                  </div>
-                  <div className="w-full h-3 bg-black/40 rounded-full overflow-hidden border border-white/5 mb-4">
-                    <div
-                      className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-300 ease-out"
-                      style={{ width: `${progress?.progress || 0}%` }}
-                    />
-                  </div>
-                  <div className="flex justify-between items-center text-xs text-zinc-400 font-mono">
-                    <span>{(progress.bytesTransferred / 1024 / 1024).toFixed(2)} MB / {(progress.totalBytes / 1024 / 1024).toFixed(2)} MB</span>
-                    <span className="bg-black/30 px-2 py-1 rounded text-emerald-300">
-                      {(progress.speed / 1024 / 1024).toFixed(2)} MB/s
-                    </span>
+              <div className="bg-black/40 border border-white/10 rounded-2xl p-6 mb-4">
+                <div className="flex items-center justify-center mb-4">
+                  <div className="relative">
+                    <div className="absolute inset-0 bg-emerald-500/20 blur-xl rounded-full animate-pulse"></div>
+                    <Download className="w-10 h-10 text-emerald-400 relative z-10" />
                   </div>
                 </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center text-emerald-400 animate-pulse mt-12">
-                  <Loader2 className="w-10 h-10 animate-spin mb-4" />
-                  <p>Đang kết nối và chờ dữ liệu...</p>
-                </div>
-              )}
+                <h3 className="text-center text-lg font-semibold text-white mb-2">Đang nhận file...</h3>
+                {progress ? (
+                  <div className="mt-4">
+                    <div className="mb-4 flex items-center justify-between">
+                      <span className="text-sm font-medium text-emerald-400 flex items-center">
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Đang truyền...
+                      </span>
+                      <span className="text-sm font-bold text-white">{progress.progress.toFixed(1)}%</span>
+                    </div>
+                    <div className="w-full h-3 bg-black/40 rounded-full overflow-hidden border border-white/5 mb-4">
+                      <div
+                        className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-300 ease-out"
+                        style={{ width: `${progress?.progress || 0}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between items-center text-xs text-zinc-400 font-mono">
+                      <div className="flex flex-col gap-1">
+                        <span>{(progress.bytesTransferred / 1024 / 1024).toFixed(2)} MB / {(progress.totalBytes / 1024 / 1024).toFixed(2)} MB</span>
+                        <span className="text-zinc-500 font-sans">{formatETA(progress.eta)}</span>
+                      </div>
+                      <div className="flex items-center space-x-3">
+                        <span className="bg-black/30 px-2 py-1 rounded text-emerald-300">
+                          {(progress.speed / 1024 / 1024).toFixed(2)} MB/s
+                        </span>
+                        <button
+                          onClick={cancelTransfer}
+                          className="p-1 px-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg text-[10px] font-medium transition-colors border border-rose-500/20"
+                        >
+                          HỦY
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center text-emerald-400 animate-pulse mt-4">
+                    <Loader2 className="w-8 h-8 animate-spin mb-2" />
+                    <p className="text-sm">Đang kết nối và chờ dữ liệu...</p>
+                  </div>
+                )}
+              </div>
             </div>
           ) : (!selectedUser && !progress) ? (
             <div className="flex-1 flex flex-col items-center justify-center text-center opacity-50">
@@ -232,10 +280,22 @@ function RoomContent() {
                   </div>
                   {progress && (
                     <div className="flex justify-between items-center text-xs text-zinc-500 font-mono">
-                      <span>{(progress.bytesTransferred / 1024 / 1024).toFixed(2)} MB / {(progress.totalBytes / 1024 / 1024).toFixed(2)} MB</span>
-                      <span className="bg-black/30 px-2 py-1 rounded text-purple-300">
-                        {(progress.speed / 1024 / 1024).toFixed(2)} MB/s
-                      </span>
+                      <div className="flex flex-col gap-1">
+                        <span>{(progress.bytesTransferred / 1024 / 1024).toFixed(2)} MB / {(progress.totalBytes / 1024 / 1024).toFixed(2)} MB</span>
+                        <span className="text-zinc-600 font-sans">{formatETA(progress.eta)}</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <span className="bg-black/30 px-2 py-1 rounded text-purple-300">
+                          {(progress.speed / 1024 / 1024).toFixed(2)} MB/s
+                        </span>
+                        <button
+                          onClick={cancelTransfer}
+                          className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg transition-colors"
+                          title="Hủy truyền file"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -260,18 +320,27 @@ function RoomContent() {
                       onDrop={handleDrop}
                       onClick={() => fileInputRef.current?.click()}
                       className={`
-                        w-full flex flex-col items-center justify-center p-12 border-2 border-dashed rounded-2xl transition-all cursor-pointer
-                        ${isDragging 
-                          ? 'border-purple-500 bg-purple-500/10' 
+                        w-full flex flex-col items-center justify-center p-12 border-2 border-dashed rounded-2xl transition-all cursor-pointer group
+                        ${isDragging
+                          ? 'border-purple-500 bg-purple-500/10'
                           : 'border-white/20 hover:border-purple-500/50 hover:bg-white/5'
                         }
                       `}
                     >
-                      <FileUp className={`w-10 h-10 mb-2 transition-colors ${isDragging ? 'text-purple-400' : 'text-zinc-400'}`} />
-                      <span className={`text-lg font-medium transition-colors ${isDragging ? 'text-purple-400' : 'text-zinc-300'}`}>
-                        {isDragging ? 'Thả file vào đây' : 'Nhấn hoặc kéo file vào đây'}
-                      </span>
-                      <p className="text-zinc-500 text-sm mt-2">Hỗ trợ mọi định dạng file</p>
+                      <div className="w-16 h-16 bg-purple-500/10 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
+                        <FileUp className="w-8 h-8 text-purple-400" />
+                      </div>
+                      <div className="text-center">
+                        <p className="text-lg font-semibold text-white mb-1">
+                          {isDragging ? 'Thả file vào đây' : 'Nhấn hoặc kéo thả file'}
+                        </p>
+                        <p className="text-zinc-400 text-sm">Kéo file vào đây để gửi cho thành viên trong phòng</p>
+                      </div>
+                      {!isDragging && (
+                        <button className="mt-6 px-6 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-medium transition-all shadow-lg shadow-purple-500/20 active:scale-95">
+                          Chọn file gửi
+                        </button>
+                      )}
                     </div>
                   )}
 

@@ -2,11 +2,11 @@
 
 import React, { useState, useRef } from 'react';
 import { useWebRTC } from '@/hooks/useWebRTC';
-import { UploadCloud, CheckCircle, XCircle, Loader2, ArrowRightCircle } from 'lucide-react';
+import { Upload, Download, UploadCloud, CheckCircle, XCircle, ArrowRightCircle, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function TransferContainer() {
-  const { status, progress, sendFile, isReceiving } = useWebRTC();
+  const { status, progress, sendFile, isReceiving, cancelTransfer } = useWebRTC();
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -65,6 +65,32 @@ export default function TransferContainer() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  const formatETA = (seconds: number | null) => {
+    if (seconds === null || seconds === Infinity) {
+      return 'Đang tính...';
+    }
+    if (seconds < 1) {
+      return 'Xong';
+    }
+
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+
+    const parts = [];
+    if (h > 0) {
+      parts.push(`${h} giờ`);
+    }
+    if (m > 0) {
+      parts.push(`${m} phút`);
+    }
+    if (s > 0 || parts.length === 0) {
+      parts.push(`${s} giây`);
+    }
+
+    return `Còn khoảng ${parts.join(' ')}`;
+  };
+
   return (
     <div className="w-full max-w-2xl mx-auto backdrop-blur-xl bg-white/5 border border-white/10 rounded-3xl overflow-hidden shadow-2xl relative">
       {/* Decorative top gradient */}
@@ -75,9 +101,9 @@ export default function TransferContainer() {
         <div className="flex items-center justify-between mb-8">
           <div>
             <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400">
-              P2P File Transfer
+              Chuyển File P2P
             </h2>
-            <p className="text-zinc-400 text-sm mt-1">Send large files securely via WebRTC</p>
+            <p className="text-zinc-400 text-sm mt-1">Truyền nhận dữ liệu an toàn qua WebRTC</p>
           </div>
 
           <div className="flex items-center space-x-2 bg-black/20 px-4 py-2 rounded-full border border-white/5">
@@ -88,7 +114,10 @@ export default function TransferContainer() {
               status === 'Connecting' ? 'text-yellow-400' :
                 'text-rose-400'
               }`}>
-              {status}
+              {status === 'Connected' ? 'Đã kết nối' :
+                status === 'Connecting' ? 'Đang kết nối...' :
+                  status === 'Error' ? 'Lỗi kết nối' : 'Chưa kết nối'
+              }
             </span>
           </div>
         </div>
@@ -115,17 +144,20 @@ export default function TransferContainer() {
             className="hidden"
           />
 
-          <div className={`p-4 rounded-full mb-4 transition-colors duration-300 ${isDragging ? 'bg-purple-500/20 text-purple-400' : 'bg-white/5 text-zinc-400 group-hover:bg-purple-500/10 group-hover:text-purple-400'
-            }`}>
-            <UploadCloud className="w-8 h-8" />
+          <div className="w-16 h-16 bg-purple-500/10 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
+            <Upload className="w-8 h-8 text-purple-400" />
           </div>
-
-          <h3 className="text-lg font-semibold text-zinc-200 mb-2">
-            Click or drag & drop to send
-          </h3>
-          <p className="text-zinc-500 text-sm max-w-sm text-center">
-            Files are transferred directly peer-to-peer. Supports files larger than 1GB.
-          </p>
+          <div className="text-center">
+            <p className="text-lg font-semibold text-white mb-1">
+              {isDragging ? 'Thả file vào đây' : 'Nhấn hoặc kéo thả file'}
+            </p>
+            <p className="text-zinc-400 text-sm">Hỗ trợ mọi định dạng file, không giới hạn dung lượng</p>
+          </div>
+          {!isDragging && (
+            <button className="mt-6 px-6 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-medium transition-all shadow-lg shadow-purple-500/20 active:scale-95">
+              Chọn file ngay
+            </button>
+          )}
         </div>
 
         {/* Progress Display */}
@@ -135,7 +167,7 @@ export default function TransferContainer() {
               <div className="flex items-center space-x-2">
                 <ArrowRightCircle className={`w-5 h-5 ${isReceiving ? 'text-emerald-400' : 'text-blue-400'}`} />
                 <span className="text-zinc-200 font-medium">
-                  {isReceiving ? 'Receiving' : 'Sending'}
+                  {isReceiving ? 'Đang nhận' : 'Đang gửi'}
                 </span>
               </div>
               <span className="text-zinc-400 text-sm font-medium">
@@ -151,10 +183,22 @@ export default function TransferContainer() {
             </div>
 
             <div className="flex justify-between items-center mt-3 text-xs text-zinc-500 font-mono">
-              <span>{formatSize(progress.bytesTransferred)} / {formatSize(progress.totalBytes)}</span>
-              <span className="bg-black/30 px-2 py-1 rounded text-purple-300">
-                {formatSpeed(progress.speed)}
-              </span>
+              <div className="flex flex-col gap-1">
+                <span>{formatSize(progress.bytesTransferred)} / {formatSize(progress.totalBytes)}</span>
+                <span className="text-zinc-400 font-sans">{formatETA(progress.eta)}</span>
+              </div>
+              <div className="flex items-center space-x-3">
+                <span className="bg-black/30 px-2 py-1 rounded text-purple-300">
+                  {formatSpeed(progress.speed)}
+                </span>
+                <button 
+                  onClick={cancelTransfer}
+                  className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg transition-colors group/cancel"
+                  title="Hủy truyền file"
+                >
+                  <XCircle className="w-5 h-5 group-hover/cancel:scale-110 transition-transform" />
+                </button>
+              </div>
             </div>
           </div>
         )}
