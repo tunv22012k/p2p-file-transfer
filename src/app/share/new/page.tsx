@@ -17,11 +17,8 @@ export default function ShareSenderPage() {
   useEffect(() => {
     if (myId && !shareLink) {
       generateKeyString().then(keyStr => {
-        // We put the key in the hash (#) so it's NEVER sent to the server
         const link = `${window.location.origin}/share/${myId}#${keyStr}`;
         setShareLink(link);
-        
-        // Load the key into the WebRTC hook for encryption
         importKeyString(keyStr).then(key => setCryptoKey(key));
       });
     }
@@ -50,21 +47,21 @@ export default function ShareSenderPage() {
     <div className="min-h-screen bg-zinc-950 flex flex-col items-center py-20 px-4">
       <div className="w-full max-w-2xl text-left mb-8">
         <Link href="/" className="text-zinc-400 hover:text-white flex items-center inline-flex">
-          <ArrowLeft className="w-4 h-4 mr-2" /> Back
+          <ArrowLeft className="w-4 h-4 mr-2" /> Quay lại
         </Link>
       </div>
 
       <div className="w-full max-w-2xl bg-white/5 border border-white/10 rounded-3xl p-8 backdrop-blur-xl">
         <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400 mb-2">
-          Share a File
+          Chia sẻ File
         </h1>
         <p className="text-zinc-400 mb-8">
-          Send a file directly. Your file is encrypted end-to-end. Keep this page open until the transfer finishes.
+          Gửi file trực tiếp. File được mã hóa đầu cuối. Giữ trang này mở cho đến khi truyền xong.
         </p>
 
         {/* Step 1: File Selection */}
         <div className="mb-8">
-          <label className="block text-sm font-medium text-zinc-300 mb-2">1. Select File</label>
+          <label className="block text-sm font-medium text-zinc-300 mb-2">1. Chọn file</label>
           <input 
             type="file" 
             ref={fileInputRef} 
@@ -78,7 +75,7 @@ export default function ShareSenderPage() {
                 onClick={() => setFileToShare(null)}
                 className="text-zinc-400 hover:text-white text-sm"
               >
-                Change
+                Đổi
               </button>
             </div>
           ) : (
@@ -87,17 +84,17 @@ export default function ShareSenderPage() {
               className="w-full flex items-center justify-center p-6 border-2 border-dashed border-white/20 hover:border-blue-500/50 hover:bg-white/5 rounded-xl transition-all"
              >
                <FileUp className="w-6 h-6 mr-3 text-zinc-400" />
-               <span className="text-zinc-300">Choose a file from your device</span>
+               <span className="text-zinc-300">Chọn file từ thiết bị của bạn</span>
              </button>
           )}
         </div>
 
         {/* Step 2: Share Link */}
         <div className={`mb-8 transition-opacity duration-300 ${fileToShare ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
-          <label className="block text-sm font-medium text-zinc-300 mb-2">2. Share Link</label>
+          <label className="block text-sm font-medium text-zinc-300 mb-2">2. Đường dẫn chia sẻ</label>
           {!fileToShare ? (
             <div className="bg-black/30 border border-white/5 rounded-xl px-4 py-4 text-zinc-500 text-sm text-center">
-               Please select a file first to generate your sharing link.
+               Vui lòng chọn file trước để tạo đường dẫn chia sẻ.
             </div>
           ) : shareLink ? (
              <div className="flex items-center space-x-2">
@@ -111,36 +108,36 @@ export default function ShareSenderPage() {
                   onClick={handleCopy}
                   className="bg-zinc-800 hover:bg-zinc-700 text-white p-3 rounded-xl transition-colors min-w-[48px] flex justify-center"
                 >
-                  {copied ? <span className="text-emerald-400 text-sm font-medium">Copied!</span> : <Copy className="w-5 h-5" />}
+                  {copied ? <span className="text-emerald-400 text-sm font-medium">Đã sao chép!</span> : <Copy className="w-5 h-5" />}
                 </button>
              </div>
           ) : (
             <div className="flex items-center space-x-2 text-zinc-400">
                <Loader2 className="w-4 h-4 animate-spin" />
-               <span>Generating secure link...</span>
+               <span>Đang tạo đường dẫn bảo mật...</span>
             </div>
           )}
         </div>
 
         {/* Step 3: Status & Action */}
         <div>
-           <label className="block text-sm font-medium text-zinc-300 mb-2">3. Transfer Status</label>
+           <label className="block text-sm font-medium text-zinc-300 mb-2">3. Trạng thái truyền file</label>
            
            <div className="flex items-center justify-between p-4 bg-black/30 rounded-xl mb-4">
-              <span className="text-zinc-400">Connection</span>
+              <span className="text-zinc-400">Kết nối</span>
               <span className={`font-medium ${
                 status === 'Connected' ? 'text-emerald-400' :
                 status === 'Connecting' ? 'text-yellow-400' :
                 'text-rose-400'
               }`}>
-                {status === 'Connected' ? 'Receiver Connected' : 'Waiting for receiver...'}
+                {status === 'Connected' ? 'Người nhận đã kết nối' : 'Đang chờ người nhận...'}
               </span>
            </div>
 
            {progress && (
               <div className="mb-4">
                 <div className="flex justify-between text-sm mb-1 text-zinc-400">
-                   <span>Sending...</span>
+                   <span>Đang gửi...</span>
                    <span>{progress.progress.toFixed(1)}%</span>
                 </div>
                 <div className="w-full h-2 bg-black/50 rounded-full overflow-hidden">
@@ -154,13 +151,13 @@ export default function ShareSenderPage() {
 
            {status === 'Connected' && !progress && (
               <div className="w-full bg-blue-600/20 text-blue-400 border border-blue-500/30 px-6 py-4 rounded-xl font-medium text-center animate-pulse">
-                Initiating transfer...
+                Đang bắt đầu truyền file...
               </div>
            )}
 
            {progress && (
              <div className="w-full bg-emerald-600/10 text-emerald-400 border border-emerald-500/20 px-6 py-4 rounded-xl font-medium text-center">
-                Transfer in progress... Please do not close this page.
+                Đang truyền file... Vui lòng không đóng trang này.
              </div>
            )}
         </div>

@@ -22,7 +22,7 @@ export default function TransferContainer() {
   const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
-    
+
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       if (status !== 'Connected') {
         alert('Please wait until another peer connects!');
@@ -44,7 +44,9 @@ export default function TransferContainer() {
 
   // Human readable speed
   const formatSpeed = (bytesPerSec: number) => {
-    if (bytesPerSec === 0) return '0 B/s';
+    if (bytesPerSec === 0) {
+      return '0 B/s';
+    }
     const k = 1024;
     const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
     const i = Math.floor(Math.log(bytesPerSec) / Math.log(k));
@@ -53,7 +55,9 @@ export default function TransferContainer() {
 
   // Convert bytes size
   const formatSize = (bytes: number) => {
-    if (bytes === 0) return '0 B';
+    if (bytes === 0) {
+      return '0 B';
+    }
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
@@ -64,7 +68,7 @@ export default function TransferContainer() {
     <div className="w-full max-w-2xl mx-auto backdrop-blur-xl bg-white/5 border border-white/10 rounded-3xl overflow-hidden shadow-2xl relative">
       {/* Decorative top gradient */}
       <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500" />
-      
+
       <div className="p-8">
         {/* Header / Connection Status */}
         <div className="flex items-center justify-between mb-8">
@@ -74,23 +78,22 @@ export default function TransferContainer() {
             </h2>
             <p className="text-zinc-400 text-sm mt-1">Send large files securely via WebRTC</p>
           </div>
-          
+
           <div className="flex items-center space-x-2 bg-black/20 px-4 py-2 rounded-full border border-white/5">
             {status === 'Connected' && <CheckCircle className="w-4 h-4 text-emerald-400" />}
             {status === 'Connecting' && <Loader2 className="w-4 h-4 text-yellow-400 animate-spin" />}
             {status === 'Disconnected' && <XCircle className="w-4 h-4 text-rose-400" />}
-            <span className={`text-sm font-medium ${
-              status === 'Connected' ? 'text-emerald-400' :
+            <span className={`text-sm font-medium ${status === 'Connected' ? 'text-emerald-400' :
               status === 'Connecting' ? 'text-yellow-400' :
-              'text-rose-400'
-            }`}>
+                'text-rose-400'
+              }`}>
               {status}
             </span>
           </div>
         </div>
 
         {/* Drag & Drop Zone */}
-        <div 
+        <div
           onClick={() => fileInputRef.current?.click()}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
@@ -98,25 +101,24 @@ export default function TransferContainer() {
           className={`
             relative cursor-pointer group rounded-2xl border-2 border-dashed
             flex flex-col items-center justify-center p-12 transition-all duration-300
-            ${isDragging 
-              ? 'border-purple-500 bg-purple-500/10' 
+            ${isDragging
+              ? 'border-purple-500 bg-purple-500/10'
               : 'border-white/20 bg-black/20 hover:border-purple-500/50 hover:bg-white/5'
             }
           `}
         >
-          <input 
-            type="file" 
-            ref={fileInputRef} 
-            onChange={handleFileSelect} 
-            className="hidden" 
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileSelect}
+            className="hidden"
           />
-          
-          <div className={`p-4 rounded-full mb-4 transition-colors duration-300 ${
-            isDragging ? 'bg-purple-500/20 text-purple-400' : 'bg-white/5 text-zinc-400 group-hover:bg-purple-500/10 group-hover:text-purple-400'
-          }`}>
+
+          <div className={`p-4 rounded-full mb-4 transition-colors duration-300 ${isDragging ? 'bg-purple-500/20 text-purple-400' : 'bg-white/5 text-zinc-400 group-hover:bg-purple-500/10 group-hover:text-purple-400'
+            }`}>
             <UploadCloud className="w-8 h-8" />
           </div>
-          
+
           <h3 className="text-lg font-semibold text-zinc-200 mb-2">
             Click or drag & drop to send
           </h3>
@@ -139,14 +141,14 @@ export default function TransferContainer() {
                 {progress.progress.toFixed(1)}%
               </span>
             </div>
-            
+
             <div className="w-full h-3 bg-black/40 rounded-full overflow-hidden border border-white/5">
-              <div 
+              <div
                 className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-300 ease-out"
                 style={{ width: `${progress.progress}%` }}
               />
             </div>
-            
+
             <div className="flex justify-between items-center mt-3 text-xs text-zinc-500 font-mono">
               <span>{formatSize(progress.bytesTransferred)} / {formatSize(progress.totalBytes)}</span>
               <span className="bg-black/30 px-2 py-1 rounded text-purple-300">
