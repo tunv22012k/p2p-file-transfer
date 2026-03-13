@@ -11,7 +11,7 @@ export const RTC_ICE_SERVERS = {
   ],
 };
 
-export const CHUNK_SIZE = 16 * 1024; // 16 KB
+export const CHUNK_SIZE = 64 * 1024; // 64 KB
 
-// When more than 16 MB is buffered, we pause sending.
-export const MAX_BUFFERED_AMOUNT = 16 * 1024 * 1024; // 16 MB
+// When more than 64 MB is buffered, we pause sending.
+export const MAX_BUFFERED_AMOUNT = 64 * 1024 * 1024; // 64 MB
