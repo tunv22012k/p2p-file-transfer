@@ -15,7 +15,7 @@ export class SignalingChannel {
     };
     
     // Announce presence
-    this.send({ type: 'peer-join', peerId: this.peerId } as any);
+    this.send({ type: 'peer-join', peerId: this.peerId });
   }
 
   public send(message: SignalingMessage) {
@@ -23,7 +23,7 @@ export class SignalingChannel {
   }
 
   public close() {
-    this.send({ type: 'peer-leave', peerId: this.peerId } as any);
+    this.send({ type: 'peer-leave', peerId: this.peerId });
     this.channel.close();
   }
 }

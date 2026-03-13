@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 const express = require('express');
 const { createServer } = require('http');
 const { Server } = require('socket.io');

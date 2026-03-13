@@ -10,7 +10,7 @@ import { FileMetadata } from '@/types/webrtc';
 function RoomContent() {
   const {
     myId, status, progress, sendFile,
-    joinRoom, roomUsers, requestFileSend,
+    joinRoom, leaveRoom, roomUsers, requestFileSend,
     incomingRequest, answerFileRequest,
     isReceiving
   } = useWebRTC();
@@ -33,11 +33,14 @@ function RoomContent() {
     return user?.username || id.slice(0, 8);
   };
 
-  // Join the room on mount
+  // Join the room on mount, cleanup on unmount (Bug 6 fix)
   useEffect(() => {
     if (roomId && status === 'Disconnected') {
       joinRoom(roomId, username || undefined);
     }
+    return () => {
+      leaveRoom();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
 
@@ -107,7 +110,7 @@ function RoomContent() {
       <div className="max-w-4xl mx-auto flex flex-col md:flex-row gap-6">
         {/* Left Column: Room Info & Users */}
         <div className="w-full md:w-1/3 space-y-4">
-          <Link href="/" className="text-zinc-400 hover:text-white flex items-center inline-flex mb-4">
+          <Link href="/" onClick={() => leaveRoom()} className="text-zinc-400 hover:text-white flex items-center inline-flex mb-4">
             <ArrowLeft className="w-4 h-4 mr-2" /> Rời phòng
           </Link>
 

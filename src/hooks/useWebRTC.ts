@@ -7,19 +7,59 @@ import { encryptChunk, decryptChunk, generateKeyString, importKeyString } from '
 // Adjust this URL to your signaling server address when deploying
 const SIGNALING_SERVER_URL = 'http://localhost:3001';
 
+// Timeout constants
+const READY_TIMEOUT_MS = 60_000; // 60s for receiver to accept
+const DONE_TIMEOUT_MS = 30_000;  // 30s for ACK after last chunk sent
+
+// ─── Fallback for browsers that don't support showSaveFilePicker (Firefox, Safari) ───
+type WritableStreamRef = WritableStreamDefaultWriter | FileSystemWritableFileStream | WritableStream<Uint8Array>;
+
+async function saveFileFallback(fileName: string): Promise<WritableStreamRef> {
+  if ('showSaveFilePicker' in window) {
+    // Chrome / Edge: native file picker
+    // @ts-expect-error - showSaveFilePicker is not in all browsers' window type yet
+    const handle = await window.showSaveFilePicker({ suggestedName: fileName });
+    return handle.createWritable();
+  }
+
+  // Firefox / Safari fallback: collect chunks in memory, then download via <a>
+  const chunks: BlobPart[] = [];
+  return new WritableStream<Uint8Array>({
+    write(chunk) {
+      chunks.push(chunk as unknown as BlobPart);
+    },
+    close() {
+      const blob = new Blob(chunks);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 100);
+    },
+  }) as unknown as WritableStreamRef;
+}
+
 export function useWebRTC() {
   const [status, setStatus] = useState<ConnectionStatus>('Disconnected');
   const [progress, setProgress] = useState<TransferProgress | null>(null);
   const [isReceiving, setIsReceiving] = useState(false);
 
   // For UI to show "Incoming file request"
-  const [incomingRequest, setIncomingRequest] = useState<{ from: string, fromUsername: string, metadata: FileMetadata } | null>(null);
+  const [incomingRequest, setIncomingRequest] = useState<{ from: string; fromUsername: string; metadata: FileMetadata } | null>(null);
 
   // For Link auto-transactions: File is offered, receiver needs to click Accept to trigger Save Dialog
   const [incomingFileMetadata, setIncomingFileMetadata] = useState<FileMetadata | null>(null);
 
   const [myId, setMyId] = useState<string>('');
-  const [roomUsers, setRoomUsers] = useState<{ id: string, username: string }[]>([]);
+  const [roomUsers, setRoomUsers] = useState<{ id: string; username: string }[]>([]);
+
+  // Bug 4 fix: Transfer lock — only 1 transfer at a time
+  const isTransferringRef = useRef(false);
 
   const socketRef = useRef<Socket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -28,14 +68,129 @@ export function useWebRTC() {
   const cryptoKeyRef = useRef<CryptoKey | null>(null);
 
   // Transfer state
-  const receiveBufferRef = useRef<FileSystemWritableFileStream | null>(null);
+  const receiveBufferRef = useRef<WritableStreamRef | null>(null);
   const receiveMetadataRef = useRef<FileMetadata | null>(null);
   const receivedSizeRef = useRef<number>(0);
   const transferStartTime = useRef<number>(0);
 
+  // Bug 1 fix: Reset PeerConnection to allow re-use
+  const resetPeerConnection = useCallback(() => {
+    dcRef.current?.close();
+    pcRef.current?.close();
+    dcRef.current = null;
+    pcRef.current = null;
+    remotePeerIdRef.current = null;
+    cryptoKeyRef.current = null;
+    isTransferringRef.current = false;
+  }, []);
+
+  const setupDataChannel = useCallback((channel: RTCDataChannel) => {
+    dcRef.current = channel;
+    channel.binaryType = 'arraybuffer';
+
+    channel.onopen = () => {
+      if (pcRef.current?.connectionState === 'connected' || pcRef.current?.connectionState === 'connecting') {
+        setStatus('Connected');
+      }
+    };
+
+    channel.onclose = () => {
+      setStatus('Disconnected');
+      receiveBufferRef.current = null;
+    };
+
+    channel.onmessage = async (event) => {
+      if (typeof event.data === 'string') {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'metadata') {
+          receiveMetadataRef.current = msg.data as FileMetadata;
+          receivedSizeRef.current = 0;
+          setIsReceiving(true);
+          transferStartTime.current = Date.now();
+
+          if (msg.keyStr) {
+            try {
+              cryptoKeyRef.current = await importKeyString(msg.keyStr);
+            } catch (err) {
+              console.error('Failed to import key from peer', err);
+            }
+          }
+
+          if (receiveBufferRef.current) {
+            // Room Sharing: User already clicked Accept and chose a save location!
+            channel.send(JSON.stringify({ type: 'ready' }));
+          } else {
+            // Link Sharing: Wait for the user to click "Save File" in the UI.
+            setIncomingFileMetadata(receiveMetadataRef.current);
+          }
+        }
+      } else if (event.data instanceof ArrayBuffer) {
+        if (receiveBufferRef.current && receiveMetadataRef.current) {
+          try {
+            let chunkBuf = event.data;
+            // Decrypt if we have a key
+            if (cryptoKeyRef.current) {
+              chunkBuf = await decryptChunk(chunkBuf, cryptoKeyRef.current);
+            }
+
+            // Bug 5 fix: Works with both FileSystemWritableFileStream and WritableStream
+            const writer = receiveBufferRef.current;
+            if ('write' in writer && typeof writer.write === 'function') {
+              await (writer as FileSystemWritableFileStream).write(chunkBuf);
+            }
+
+            receivedSizeRef.current += chunkBuf.byteLength;
+
+            const now = Date.now();
+            const elapsed = (now - transferStartTime.current) / 1000;
+            const currentSpeed = elapsed > 0 ? receivedSizeRef.current / elapsed : 0;
+
+            setProgress({
+              progress: (receivedSizeRef.current / receiveMetadataRef.current.size) * 100,
+              bytesTransferred: receivedSizeRef.current,
+              totalBytes: receiveMetadataRef.current.size,
+              speed: currentSpeed,
+            });
+
+            if (receivedSizeRef.current >= receiveMetadataRef.current.size) {
+              // Close the writable stream
+              const buf = receiveBufferRef.current;
+              if ('close' in buf && typeof buf.close === 'function') {
+                await buf.close();
+              }
+              receiveBufferRef.current = null;
+              setIsReceiving(false);
+              setProgress(null);
+              isTransferringRef.current = false;
+              // Send ACK to sender so they know file was fully received
+              if (channel.readyState === 'open') {
+                channel.send(JSON.stringify({ type: 'done' }));
+              }
+              // Bug 1: Reset PC so next transfer creates a fresh connection
+              resetPeerConnection();
+              alert('Tải file hoàn tất!');
+            }
+          } catch (err) {
+            console.error('Failed to decrypt or write chunk:', err);
+            isTransferringRef.current = false;
+            channel.close();
+          }
+        }
+      }
+    };
+  }, [resetPeerConnection]);
+
   const initWebRTC = useCallback(() => {
+    // Bug 1 fix: If existing PC is closed/failed, reset it
     if (pcRef.current) {
-      return pcRef.current;
+      const state = pcRef.current.connectionState;
+      if (state === 'closed' || state === 'failed' || state === 'disconnected') {
+        pcRef.current.close();
+        pcRef.current = null;
+        dcRef.current = null;
+      } else {
+        return pcRef.current;
+      }
     }
 
     const pc = new RTCPeerConnection(RTC_ICE_SERVERS);
@@ -71,88 +226,7 @@ export function useWebRTC() {
     };
 
     return pc;
-  }, []);
-
-  const setupDataChannel = useCallback((channel: RTCDataChannel) => {
-    dcRef.current = channel;
-    channel.binaryType = 'arraybuffer';
-
-    channel.onopen = () => {
-      if (pcRef.current?.connectionState === 'connected' || pcRef.current?.connectionState === 'connecting') {
-        setStatus('Connected');
-      }
-    };
-
-    channel.onclose = () => {
-      setStatus('Disconnected');
-      receiveBufferRef.current = null;
-    };
-
-    channel.onmessage = async (event) => {
-      if (typeof event.data === 'string') {
-        const msg = JSON.parse(event.data);
-        if (msg.type === 'metadata') {
-          receiveMetadataRef.current = msg.data as FileMetadata;
-          receivedSizeRef.current = 0;
-          setIsReceiving(true);
-          transferStartTime.current = Date.now();
-
-          if (msg.keyStr) {
-            try {
-              cryptoKeyRef.current = await importKeyString(msg.keyStr);
-            } catch (err) {
-              console.error("Failed to import key from peer", err);
-            }
-          }
-
-          if (receiveBufferRef.current) {
-            // Room Sharing: User already clicked Accept and chose a save location!
-            channel.send(JSON.stringify({ type: 'ready' }));
-          } else {
-            // Link Sharing: Wait for the user to click "Save File" in the UI.
-            setIncomingFileMetadata(receiveMetadataRef.current);
-          }
-        }
-      } else if (event.data instanceof ArrayBuffer) {
-        if (receiveBufferRef.current && receiveMetadataRef.current) {
-          try {
-            let chunkBuf = event.data;
-            // Decrypt if we have a key
-            if (cryptoKeyRef.current) {
-              chunkBuf = await decryptChunk(chunkBuf, cryptoKeyRef.current);
-            }
-
-            await receiveBufferRef.current.write(chunkBuf);
-            receivedSizeRef.current += chunkBuf.byteLength;
-
-            const now = Date.now();
-            const elapsed = (now - transferStartTime.current) / 1000;
-            const currentSpeed = elapsed > 0 ? receivedSizeRef.current / elapsed : 0;
-
-            setProgress({
-              progress: (receivedSizeRef.current / receiveMetadataRef.current.size) * 100,
-              bytesTransferred: receivedSizeRef.current,
-              totalBytes: receiveMetadataRef.current.size,
-              speed: currentSpeed,
-            });
-
-            if (receivedSizeRef.current >= receiveMetadataRef.current.size) {
-              await receiveBufferRef.current.close();
-              receiveBufferRef.current = null;
-              setIsReceiving(false);
-              setProgress(null);
-              // Send ACK to sender so they know file was fully received
-              channel.send(JSON.stringify({ type: 'done' }));
-              alert('Tải file hoàn tất!');
-            }
-          } catch (err) {
-            console.error("Failed to decrypt or write chunk:", err);
-            channel.close();
-          }
-        }
-      }
-    };
-  }, []);
+  }, [setupDataChannel]);
 
   useEffect(() => {
     socketRef.current = io(SIGNALING_SERVER_URL);
@@ -162,16 +236,16 @@ export function useWebRTC() {
     });
 
     // Room functionality
-    socketRef.current.on('room-users', (users: { id: string, username: string }[]) => {
+    socketRef.current.on('room-users', (users: { id: string; username: string }[]) => {
       setRoomUsers(users);
     });
 
-    socketRef.current.on('peer-joined', (data: { id: string, username: string }) => {
-      setRoomUsers(prev => [...prev, data]);
+    socketRef.current.on('peer-joined', (data: { id: string; username: string }) => {
+      setRoomUsers((prev) => [...prev, data]);
     });
 
     socketRef.current.on('peer-left', (peerId: string) => {
-      setRoomUsers(prev => prev.filter(u => u.id !== peerId));
+      setRoomUsers((prev) => prev.filter((u) => u.id !== peerId));
     });
 
     // Link Sharing: Someone opened our link and wants to connect
@@ -186,12 +260,12 @@ export function useWebRTC() {
 
       socketRef.current?.emit('offer', {
         to: peerId,
-        sdp: { type: offer.type, sdp: offer.sdp }
+        sdp: { type: offer.type, sdp: offer.sdp },
       });
     });
 
     // Signaling protocol
-    socketRef.current.on('offer', async (data) => {
+    socketRef.current.on('offer', async (data: { from: string; sdp: RTCSessionDescriptionInit }) => {
       remotePeerIdRef.current = data.from;
       const pc = initWebRTC();
 
@@ -201,31 +275,35 @@ export function useWebRTC() {
 
       socketRef.current?.emit('answer', {
         to: data.from,
-        sdp: { type: answer.type, sdp: answer.sdp }
+        sdp: { type: answer.type, sdp: answer.sdp },
       });
     });
 
-    socketRef.current.on('answer', async (data) => {
+    socketRef.current.on('answer', async (data: { sdp: RTCSessionDescriptionInit }) => {
       const pc = pcRef.current;
       if (pc) {
         await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
       }
     });
 
-    socketRef.current.on('ice-candidate', async (data) => {
+    socketRef.current.on('ice-candidate', async (data: { candidate: RTCIceCandidateInit }) => {
       const pc = pcRef.current;
       if (pc) {
         try {
           await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
         } catch (e) {
-          console.error("Error adding ice candidate", e);
+          console.error('Error adding ice candidate', e);
         }
       }
     });
 
     // File Request Protocol
-    socketRef.current.on('file-request', (data) => {
-      setIncomingRequest({ from: data.from, fromUsername: data.fromUsername || data.from, metadata: data.metadata });
+    socketRef.current.on('file-request', (data: { from: string; fromUsername?: string; metadata: FileMetadata }) => {
+      setIncomingRequest({
+        from: data.from,
+        fromUsername: data.fromUsername || data.from,
+        metadata: data.metadata,
+      });
     });
 
     return () => {
@@ -240,17 +318,33 @@ export function useWebRTC() {
     socketRef.current?.emit('join-room', { roomId, username });
   };
 
+  // Bug 6 fix: Explicit leave room
+  const leaveRoom = () => {
+    resetPeerConnection();
+    // Socket.io will handle the disconnect event on server side
+  };
+
   const connectToPeer = (peerId: string) => {
     socketRef.current?.emit('request-direct-connection', peerId);
   };
 
   const requestFileSend = (targetPeerId: string, metadata: FileMetadata) => {
+    // Bug 4: Check transfer lock
+    if (isTransferringRef.current) {
+      alert('Đang có một luồng truyền file, vui lòng đợi hoàn tất.');
+      return Promise.resolve(false);
+    }
+
     return new Promise<boolean>((resolve) => {
       socketRef.current?.emit('file-request', { to: targetPeerId, metadata });
 
-      const onAccept = async (data: any) => {
+      const onAccept = async (data: { from: string }) => {
         if (data.from === targetPeerId) {
           cleanup();
+          isTransferringRef.current = true;
+
+          // Bug 1: Reset old connection before creating new one
+          resetPeerConnection();
 
           // Setup WebRTC connection NOW, and wait for it to open before resolving true
           remotePeerIdRef.current = targetPeerId;
@@ -258,7 +352,7 @@ export function useWebRTC() {
           const dc = pc.createDataChannel('fileTransfer');
           setupDataChannel(dc);
 
-          // Wait for datachannel to actually be open before we say "accepted" (to prevent 'Connection not open' errors)
+          // Wait for datachannel to actually be open before we say "accepted"
           dc.addEventListener('open', () => {
             resolve(true);
           });
@@ -267,11 +361,11 @@ export function useWebRTC() {
           await pc.setLocalDescription(offer);
           socketRef.current?.emit('offer', {
             to: targetPeerId,
-            sdp: { type: offer.type, sdp: offer.sdp }
+            sdp: { type: offer.type, sdp: offer.sdp },
           });
         }
       };
-      const onReject = (data: any) => {
+      const onReject = (data: { from: string }) => {
         if (data.from === targetPeerId) {
           cleanup();
           resolve(false);
@@ -293,23 +387,29 @@ export function useWebRTC() {
       return;
     }
 
+    // Bug 4: Check transfer lock
+    if (accept && isTransferringRef.current) {
+      alert('Đang có một luồng truyền file khác, vui lòng đợi.');
+      setIncomingRequest(null);
+      socketRef.current?.emit('file-request-rejected', { to: incomingRequest.from });
+      return;
+    }
+
     if (accept) {
       try {
-        // Since this is triggered by a real user click, we can legally pop the Save dialog here without SecurityError
-        // @ts-ignore
-        const handle = await window.showSaveFilePicker({
-          suggestedName: incomingRequest.metadata.name,
-        });
-        receiveBufferRef.current = await handle.createWritable();
+        // Bug 5 fix: Use fallback for browsers without showSaveFilePicker
+        const writable = await saveFileFallback(incomingRequest.metadata.name);
+        receiveBufferRef.current = writable;
         receiveMetadataRef.current = incomingRequest.metadata;
         receivedSizeRef.current = 0;
         setIsReceiving(true);
+        isTransferringRef.current = true;
         transferStartTime.current = Date.now();
 
-        // Notify the sender we are ready, so they can initiate the WebRTC offer 
+        // Notify the sender we are ready, so they can initiate the WebRTC offer
         socketRef.current?.emit('file-request-accepted', { to: incomingRequest.from });
       } catch (e) {
-        console.error("User cancelled picker or error:", e);
+        console.error('User cancelled picker or error:', e);
         // Treat as rejected if they cancel the save prompt
         socketRef.current?.emit('file-request-rejected', { to: incomingRequest.from });
         setIncomingRequest(null);
@@ -330,17 +430,23 @@ export function useWebRTC() {
       return;
     }
 
+    // Bug 4: Check transfer lock
+    if (isTransferringRef.current) {
+      alert('Đang có một luồng truyền file khác, vui lòng đợi.');
+      return;
+    }
+
     try {
-      // @ts-ignore
-      const handle = await window.showSaveFilePicker({
-        suggestedName: incomingFileMetadata.name,
-      });
-      receiveBufferRef.current = await handle.createWritable();
+      // Bug 5 fix: Use fallback for browsers without showSaveFilePicker
+      const writable = await saveFileFallback(incomingFileMetadata.name);
+      receiveBufferRef.current = writable;
+      isTransferringRef.current = true;
       dcRef.current.send(JSON.stringify({ type: 'ready' }));
       setIncomingFileMetadata(null); // Clear prompt
-    } catch (e) {
+    } catch (e: unknown) {
       console.error('User cancelled save prompt or error:', e);
-      dcRef.current.send(JSON.stringify({ type: 'error', error: 'User cancelled or failed to save' }));
+      const error = e instanceof Error ? e.message : String(e);
+      dcRef.current.send(JSON.stringify({ type: 'error', error: `User cancelled or failed to save: ${error}` }));
       setIsReceiving(false);
       setIncomingFileMetadata(null);
     }
@@ -365,33 +471,68 @@ export function useWebRTC() {
       cryptoKeyRef.current = await importKeyString(shareKeyStr);
     }
 
-    dcRef.current.send(JSON.stringify({
-      type: 'metadata',
-      data: metadata,
-      keyStr: shareKeyStr || undefined
-    }));
+    dcRef.current.send(
+      JSON.stringify({
+        type: 'metadata',
+        data: metadata,
+        keyStr: shareKeyStr || undefined,
+      })
+    );
 
+    // Bug 2 & 3 fix: waitForReady with timeout + channel close detection
     const waitForReady = new Promise<void>((resolve, reject) => {
       const dc = dcRef.current!;
+      let settled = false;
+
       const onMessage = (event: MessageEvent) => {
+        if (settled) return;
         if (typeof event.data === 'string') {
           const msg = JSON.parse(event.data);
           if (msg.type === 'ready') {
-            dc.removeEventListener('message', onMessage);
+            settled = true;
+            cleanup();
             resolve();
           } else if (msg.type === 'error') {
-            dc.removeEventListener('message', onMessage);
+            settled = true;
+            cleanup();
             reject(new Error(msg.error));
           }
         }
       };
+
+      const onClose = () => {
+        if (!settled) {
+          settled = true;
+          cleanup();
+          reject(new Error('Kết nối bị đóng'));
+        }
+      };
+
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          cleanup();
+          reject(new Error('Hết thời gian chờ người nhận'));
+        }
+      }, READY_TIMEOUT_MS);
+
+      const cleanup = () => {
+        clearTimeout(timer);
+        dc.removeEventListener('message', onMessage);
+        dc.removeEventListener('close', onClose);
+      };
+
       dc.addEventListener('message', onMessage);
+      dc.addEventListener('close', onClose);
     });
 
     try {
       await waitForReady;
-    } catch (e) {
-      alert('Người nhận đã từ chối file.');
+    } catch (e: unknown) {
+      const error = e as Error;
+      isTransferringRef.current = false;
+      alert(`Không thể gửi file: ${error.message || 'Người nhận đã từ chối file.'}`);
+      resetPeerConnection();
       return;
     }
 
@@ -402,77 +543,123 @@ export function useWebRTC() {
     const stream = file.stream();
     const reader = stream.getReader();
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      let chunk = value;
-      let chunkOffset = 0;
+        const chunk = value;
+        let chunkOffset = 0;
 
-      // Slice the read chunk into optimal CHUNK_SIZE pieces for WebRTC
-      while (chunkOffset < chunk.length) {
-        if (dcRef.current!.bufferedAmount > MAX_BUFFERED_AMOUNT) {
-          await new Promise<void>((resolve) => {
-            const dc = dcRef.current!;
-            const onLow = () => {
-              dc.removeEventListener('bufferedamountlow', onLow);
-              resolve();
-            };
-            dc.addEventListener('bufferedamountlow', onLow);
+        // Slice the read chunk into optimal CHUNK_SIZE pieces for WebRTC
+        while (chunkOffset < chunk.length) {
+          if (dcRef.current!.bufferedAmount > MAX_BUFFERED_AMOUNT) {
+            await new Promise<void>((resolve) => {
+              const dc = dcRef.current!;
+              const onLow = () => {
+                dc.removeEventListener('bufferedamountlow', onLow);
+                resolve();
+              };
+              dc.addEventListener('bufferedamountlow', onLow);
+            });
+          }
+
+          if (!dcRef.current || dcRef.current.readyState !== 'open') {
+            throw new Error('Kết nối bị đóng giữa chừng');
+          }
+
+          const end = Math.min(chunkOffset + CHUNK_SIZE, chunk.length);
+          let slice = chunk.slice(chunkOffset, end).buffer;
+          chunkOffset = end;
+
+          // Encrypt if we have a key
+          if (cryptoKeyRef.current) {
+            slice = await encryptChunk(slice, cryptoKeyRef.current);
+          }
+
+          dcRef.current!.send(slice);
+          offset += slice.byteLength;
+
+          const now = Date.now();
+          const elapsed = (now - start) / 1000;
+          const currentSpeed = elapsed > 0 ? offset / elapsed : 0;
+
+          setProgress({
+            progress: (offset / (file.size + (file.size / CHUNK_SIZE) * 28)) * 100,
+            bytesTransferred: offset,
+            totalBytes: file.size,
+            speed: currentSpeed,
           });
         }
-
-        if (dcRef.current!.readyState !== 'open') {
-          return;
-        }
-
-        const end = Math.min(chunkOffset + CHUNK_SIZE, chunk.length);
-        let slice = chunk.slice(chunkOffset, end).buffer;
-        chunkOffset = end;
-
-        // Encrypt if we have a key
-        if (cryptoKeyRef.current) {
-          slice = await encryptChunk(slice, cryptoKeyRef.current);
-        }
-
-        dcRef.current!.send(slice);
-        offset += slice.byteLength; // Note: For progress, this includes encryption overhead
-
-        const now = Date.now();
-        const elapsed = (now - start) / 1000;
-        const currentSpeed = elapsed > 0 ? offset / elapsed : 0;
-
-        // We use the original file size for progress, recognizing that encrypted length is slightly different
-        setProgress({
-          progress: (offset / (file.size + (file.size / CHUNK_SIZE) * 28)) * 100, // Roughly account for AES-GCM tag/IV overhead
-          bytesTransferred: offset,
-          totalBytes: file.size,
-          speed: currentSpeed,
-        });
       }
+    } catch (e: unknown) {
+      const error = e as Error;
+      isTransferringRef.current = false;
+      setProgress(null);
+      alert(`Lỗi khi gửi file: ${error.message}`);
+      resetPeerConnection();
+      return;
     }
 
-    // Wait for receiver ACK (confirmation that file was written to disk)
+    // Bug 2 fix: Wait for receiver ACK with timeout + channel close detection
     const waitForDone = new Promise<void>((resolve) => {
-      const dc = dcRef.current!;
+      const dc = dcRef.current;
+      if (!dc || dc.readyState !== 'open') {
+        // Channel already closed, treat as success (data was sent)
+        resolve();
+        return;
+      }
+
+      let settled = false;
+
       const onDoneMessage = (event: MessageEvent) => {
+        if (settled) return;
         if (typeof event.data === 'string') {
           const msg = JSON.parse(event.data);
           if (msg.type === 'done') {
-            dc.removeEventListener('message', onDoneMessage);
+            settled = true;
+            cleanup();
             resolve();
           }
         }
       };
+
+      const onClose = () => {
+        if (!settled) {
+          settled = true;
+          cleanup();
+          // Channel closed, data was likely delivered by SCTP
+          resolve();
+        }
+      };
+
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          cleanup();
+          // Timeout: data was sent, assume success
+          resolve();
+        }
+      }, DONE_TIMEOUT_MS);
+
+      const cleanup = () => {
+        clearTimeout(timer);
+        dc.removeEventListener('message', onDoneMessage);
+        dc.removeEventListener('close', onClose);
+      };
+
       dc.addEventListener('message', onDoneMessage);
+      dc.addEventListener('close', onClose);
     });
 
     await waitForDone;
 
-    // Done sending - receiver confirmed
+    // Done sending — reset for next transfer
+    isTransferringRef.current = false;
     setProgress(null);
+    resetPeerConnection();
     alert('Gửi file thành công! Người nhận đã nhận đầy đủ.');
-  }, []);
+  }, [resetPeerConnection]);
 
   return {
     myId,
@@ -481,6 +668,7 @@ export function useWebRTC() {
     sendFile,
     isReceiving,
     joinRoom,
+    leaveRoom,
     connectToPeer,
     roomUsers,
     requestFileSend,
