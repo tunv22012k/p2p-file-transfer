@@ -60,7 +60,6 @@ export function useWebRTC() {
   const [myId, setMyId] = useState<string>('');
   const [roomUsers, setRoomUsers] = useState<{ id: string; username: string }[]>([]);
 
-  // Bug 4 fix: Transfer lock — only 1 transfer at a time
   const isTransferringRef = useRef(false);
 
   const socketRef = useRef<Socket | null>(null);
@@ -77,7 +76,6 @@ export function useWebRTC() {
   const receivedSizeRef = useRef<number>(0);
   const transferStartTime = useRef<number>(0);
 
-  // Bug 1 fix: Reset PeerConnection to allow re-use
   const resetPeerConnection = useCallback(() => {
     dcRef.current?.close();
     pcRef.current?.close();
@@ -139,7 +137,6 @@ export function useWebRTC() {
               chunkBuf = await decryptChunk(chunkBuf, cryptoKeyRef.current);
             }
 
-            // Bug 5 fix: Works with both FileSystemWritableFileStream and WritableStream
             const writer = receiveBufferRef.current;
             if ('write' in writer && typeof writer.write === 'function') {
               await (writer as FileSystemWritableFileStream).write(chunkBuf);
@@ -238,7 +235,6 @@ export function useWebRTC() {
   }, [resetPeerConnection]);
 
   const initWebRTC = useCallback(() => {
-    // Bug 1 fix: If existing PC is closed/failed, reset it
     if (pcRef.current) {
       const state = pcRef.current.connectionState;
       if (state === 'closed' || state === 'failed' || state === 'disconnected') {
@@ -385,7 +381,6 @@ export function useWebRTC() {
     socketRef.current?.emit('join-room', { roomId, username });
   };
 
-  // Bug 6 fix: Explicit leave room
   const leaveRoom = () => {
     resetPeerConnection();
     // Socket.io will handle the disconnect event on server side
@@ -396,7 +391,6 @@ export function useWebRTC() {
   };
 
   const requestFileSend = (targetPeerId: string, metadata: FileMetadata) => {
-    // Bug 4: Check transfer lock
     if (isTransferringRef.current) {
       toast.info('Đang có một luồng truyền file, vui lòng đợi hoàn tất.');
       return Promise.resolve(false);
@@ -410,7 +404,6 @@ export function useWebRTC() {
           cleanup();
           isTransferringRef.current = true;
 
-          // Bug 1: Reset old connection before creating new one
           resetPeerConnection();
 
           // Setup WebRTC connection NOW, and wait for it to open before resolving true
@@ -454,7 +447,6 @@ export function useWebRTC() {
       return;
     }
 
-    // Bug 4: Check transfer lock
     if (accept && isTransferringRef.current) {
       toast.info('Đang có một luồng truyền file khác, vui lòng đợi.');
       setIncomingRequest(null);
@@ -464,7 +456,6 @@ export function useWebRTC() {
 
     if (accept) {
       try {
-        // Bug 5 fix: Use fallback for browsers without showSaveFilePicker
         const writable = await saveFileFallback(incomingRequest.metadata.name);
         receiveBufferRef.current = writable;
         receiveMetadataRef.current = incomingRequest.metadata;
@@ -497,14 +488,12 @@ export function useWebRTC() {
       return;
     }
 
-    // Bug 4: Check transfer lock
     if (isTransferringRef.current) {
       toast.info('Đang có một luồng truyền file khác, vui lòng đợi.');
       return;
     }
 
     try {
-      // Bug 5 fix: Use fallback for browsers without showSaveFilePicker
       const writable = await saveFileFallback(incomingFileMetadata.name);
       receiveBufferRef.current = writable;
       isTransferringRef.current = true;
@@ -549,13 +538,14 @@ export function useWebRTC() {
       })
     );
 
-    // Bug 2 & 3 fix: waitForReady with timeout + channel close detection
     const waitForReady = new Promise<void>((resolve, reject) => {
       const dc = dcRef.current!;
       let settled = false;
 
       const onMessage = (event: MessageEvent) => {
-        if (settled) return;
+        if (settled) {
+          return;
+        }
         if (typeof event.data === 'string') {
           const msg = JSON.parse(event.data);
           if (msg.type === 'ready') {
@@ -616,7 +606,9 @@ export function useWebRTC() {
     try {
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          break;
+        }
 
         const chunk = value;
         let chunkOffset = 0;
@@ -684,7 +676,6 @@ export function useWebRTC() {
       return;
     }
 
-    // Bug 2 fix: Wait for receiver ACK with timeout + channel close detection
     const waitForDone = new Promise<void>((resolve) => {
       const dc = dcRef.current;
       if (!dc || dc.readyState !== 'open') {
@@ -696,7 +687,9 @@ export function useWebRTC() {
       let settled = false;
 
       const onDoneMessage = (event: MessageEvent) => {
-        if (settled) return;
+        if (settled) {
+          return;
+        }
         if (typeof event.data === 'string') {
           const msg = JSON.parse(event.data);
           if (msg.type === 'done') {
