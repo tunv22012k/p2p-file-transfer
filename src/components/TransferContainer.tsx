@@ -3,6 +3,7 @@
 import React, { useState, useRef } from 'react';
 import { useWebRTC } from '@/hooks/useWebRTC';
 import { UploadCloud, CheckCircle, XCircle, Loader2, ArrowRightCircle } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function TransferContainer() {
   const { status, progress, sendFile, isReceiving } = useWebRTC();
@@ -25,7 +26,7 @@ export default function TransferContainer() {
 
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       if (status !== 'Connected') {
-        alert('Please wait until another peer connects!');
+        toast.info('Vui lòng đợi kết nối với người nhận!');
         return;
       }
       await sendFile(e.dataTransfer.files[0]);
@@ -35,7 +36,7 @@ export default function TransferContainer() {
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       if (status !== 'Connected') {
-        alert('Please wait until another peer connects!');
+        toast.info('Vui lòng đợi kết nối với người nhận!');
         return;
       }
       await sendFile(e.target.files[0]);

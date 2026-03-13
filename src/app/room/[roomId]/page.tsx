@@ -22,6 +22,7 @@ function RoomContent() {
 
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
   const [fileToShare, setFileToShare] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isRequesting, setIsRequesting] = useState(false);
@@ -47,6 +48,25 @@ function RoomContent() {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setFileToShare(e.target.files[0]);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      setFileToShare(e.dataTransfer.files[0]);
     }
   };
 
@@ -234,13 +254,25 @@ function RoomContent() {
                       <button onClick={() => setFileToShare(null)} className="text-zinc-400 hover:text-white text-sm">Đổi</button>
                     </div>
                   ) : (
-                    <button
+                    <div
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
                       onClick={() => fileInputRef.current?.click()}
-                      className="w-full flex items-center justify-center p-8 border-2 border-dashed border-white/20 hover:border-purple-500/50 hover:bg-white/5 rounded-2xl transition-all"
+                      className={`
+                        w-full flex flex-col items-center justify-center p-12 border-2 border-dashed rounded-2xl transition-all cursor-pointer
+                        ${isDragging 
+                          ? 'border-purple-500 bg-purple-500/10' 
+                          : 'border-white/20 hover:border-purple-500/50 hover:bg-white/5'
+                        }
+                      `}
                     >
-                      <FileUp className="w-8 h-8 mr-4 text-zinc-400" />
-                      <span className="text-lg text-zinc-300 font-medium">Nhấn để chọn file</span>
-                    </button>
+                      <FileUp className={`w-10 h-10 mb-2 transition-colors ${isDragging ? 'text-purple-400' : 'text-zinc-400'}`} />
+                      <span className={`text-lg font-medium transition-colors ${isDragging ? 'text-purple-400' : 'text-zinc-300'}`}>
+                        {isDragging ? 'Thả file vào đây' : 'Nhấn hoặc kéo file vào đây'}
+                      </span>
+                      <p className="text-zinc-500 text-sm mt-2">Hỗ trợ mọi định dạng file</p>
+                    </div>
                   )}
 
                   {requestStatus === 'rejected' && (

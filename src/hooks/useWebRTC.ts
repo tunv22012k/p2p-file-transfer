@@ -3,6 +3,7 @@ import { io, Socket } from 'socket.io-client';
 import { RTC_ICE_SERVERS, CHUNK_SIZE, MAX_BUFFERED_AMOUNT } from '@/lib/webrtc-config';
 import { ConnectionStatus, FileMetadata, TransferProgress } from '@/types/webrtc';
 import { encryptChunk, decryptChunk, generateKeyString, importKeyString } from '@/lib/crypto';
+import { toast } from 'sonner';
 
 // Adjust this URL to your signaling server address when deploying
 const SIGNALING_SERVER_URL = 'http://localhost:3001';
@@ -168,7 +169,7 @@ export function useWebRTC() {
               }
               // Bug 1: Reset PC so next transfer creates a fresh connection
               resetPeerConnection();
-              alert('Tải file hoàn tất!');
+              toast.success('Tải file hoàn tất!');
             }
           } catch (err) {
             console.error('Failed to decrypt or write chunk:', err);
@@ -331,7 +332,7 @@ export function useWebRTC() {
   const requestFileSend = (targetPeerId: string, metadata: FileMetadata) => {
     // Bug 4: Check transfer lock
     if (isTransferringRef.current) {
-      alert('Đang có một luồng truyền file, vui lòng đợi hoàn tất.');
+      toast.info('Đang có một luồng truyền file, vui lòng đợi hoàn tất.');
       return Promise.resolve(false);
     }
 
@@ -389,7 +390,7 @@ export function useWebRTC() {
 
     // Bug 4: Check transfer lock
     if (accept && isTransferringRef.current) {
-      alert('Đang có một luồng truyền file khác, vui lòng đợi.');
+      toast.info('Đang có một luồng truyền file khác, vui lòng đợi.');
       setIncomingRequest(null);
       socketRef.current?.emit('file-request-rejected', { to: incomingRequest.from });
       return;
@@ -432,7 +433,7 @@ export function useWebRTC() {
 
     // Bug 4: Check transfer lock
     if (isTransferringRef.current) {
-      alert('Đang có một luồng truyền file khác, vui lòng đợi.');
+      toast.info('Đang có một luồng truyền file khác, vui lòng đợi.');
       return;
     }
 
@@ -454,7 +455,7 @@ export function useWebRTC() {
 
   const sendFile = useCallback(async (file: File) => {
     if (!dcRef.current || dcRef.current.readyState !== 'open') {
-      alert('Kết nối chưa sẵn sàng.');
+      toast.error('Kết nối chưa sẵn sàng.');
       return;
     }
 
@@ -531,7 +532,7 @@ export function useWebRTC() {
     } catch (e: unknown) {
       const error = e as Error;
       isTransferringRef.current = false;
-      alert(`Không thể gửi file: ${error.message || 'Người nhận đã từ chối file.'}`);
+      toast.error(`Không thể gửi file: ${error.message || 'Người nhận đã từ chối file.'}`);
       resetPeerConnection();
       return;
     }
@@ -596,7 +597,7 @@ export function useWebRTC() {
       const error = e as Error;
       isTransferringRef.current = false;
       setProgress(null);
-      alert(`Lỗi khi gửi file: ${error.message}`);
+      toast.error(`Lỗi khi gửi file: ${error.message}`);
       resetPeerConnection();
       return;
     }
@@ -658,7 +659,7 @@ export function useWebRTC() {
     isTransferringRef.current = false;
     setProgress(null);
     resetPeerConnection();
-    alert('Gửi file thành công! Người nhận đã nhận đầy đủ.');
+    toast.success('Gửi file thành công! Người nhận đã nhận đầy đủ.');
   }, [resetPeerConnection]);
 
   return {
