@@ -252,7 +252,9 @@ export function useWebRTC() {
     pc.onconnectionstatechange = () => {
       switch (pc.connectionState) {
         case 'connected':
-          setStatus('Connected');
+          if (dcRef.current?.readyState === 'open') {
+            setStatus('Connected');
+          }
           break;
         case 'disconnected':
         case 'failed':
