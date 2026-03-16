@@ -29,6 +29,18 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
+## Features
+
+- **P2P direct transfer**: Fast and secure.
+- **End-to-End Encryption**: Secure data transmission using AES-GCM.
+- **Room System**: Join rooms to share files with multiple peers.
+- **Quick Links**: Share files instantly with a generated secure URL.
+
+## Documentation
+
+For a detailed technical guide on the source code structure, page roles, and core logic, please refer to:
+👉 **[ARCHITECTURE.md](./ARCHITECTURE.md)**
+
 ## Deploy on Vercel
 
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.

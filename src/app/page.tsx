@@ -30,20 +30,16 @@ export default function Home() {
 
       <div className="text-center mb-16 relative z-10">
         <h1 className="text-5xl font-extrabold tracking-tight text-white sm:text-6xl mb-4">
-          Truyền File Siêu Tốc <br/>
+          Truyền File Siêu Tốc <br />
           <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400">
-            Ngang Hàng (P2P)
+            P2P
           </span>
         </h1>
-        <p className="text-lg text-zinc-400 max-w-2xl mx-auto">
-          Chia sẻ file an toàn với mã hóa đầu cuối (E2E).
-          Chọn phương thức chia sẻ bên dưới để bắt đầu.
-        </p>
       </div>
 
       <div className="w-full max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
         {/* Link Share Option */}
-        <div 
+        <div
           onClick={handleCreateLink}
           className="backdrop-blur-xl bg-white/5 border border-white/10 hover:border-blue-500/50 hover:bg-white/10 rounded-3xl p-8 cursor-pointer transition-all flex flex-col items-center text-center group"
         >
@@ -65,24 +61,24 @@ export default function Home() {
           <p className="text-zinc-400 mb-6">
             Nhập mã phòng để tham gia. Mọi người trong phòng đều có thể gửi và nhận file với nhau.
           </p>
-          
+
           <form onSubmit={handleJoinRoom} className="w-full space-y-3">
-            <input 
-              type="text" 
-              placeholder="Tên hiển thị (VD: Minh, Hùng...)" 
+            <input
+              type="text"
+              placeholder="Tên hiển thị (VD: Minh, Hùng...)"
               value={username}
               onChange={e => setUsername(e.target.value)}
               className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500/50 placeholder:text-zinc-600"
             />
             <div className="flex space-x-2">
-              <input 
-                type="text" 
-                placeholder="Nhập mã phòng" 
+              <input
+                type="text"
+                placeholder="Nhập mã phòng"
                 value={roomId}
                 onChange={e => setRoomId(e.target.value)}
                 className="flex-1 bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500/50 placeholder:text-zinc-600"
               />
-              <button 
+              <button
                 type="submit"
                 disabled={!roomId.trim()}
                 className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-3 rounded-xl font-medium transition-colors"
