@@ -6,8 +6,8 @@ import { encryptChunk, decryptChunk, generateKeyString, importKeyString } from '
 import { toast } from 'sonner';
 import { historyUtil } from '@/lib/history';
 
-// Adjust this URL to your signaling server address when deploying
-const SIGNALING_SERVER_URL = 'http://localhost:3001';
+// Use environment variable if available, otherwise dynamically use the current origin in production, or localhost in dev.
+const SIGNALING_SERVER_URL = process.env.NEXT_PUBLIC_SIGNALING_URL || (typeof window !== 'undefined' ? (window.location.hostname === 'localhost' ? 'http://localhost:3001' : window.location.origin) : 'http://localhost:3001');
 
 // Timeout constants
 const READY_TIMEOUT_MS = 60_000; // 60s for receiver to accept
