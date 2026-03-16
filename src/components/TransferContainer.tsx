@@ -54,15 +54,13 @@ export default function TransferContainer() {
     return parseFloat((bytesPerSec / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  // Convert bytes size
+  // Convert bytes size to KB
   const formatSize = (bytes: number) => {
     if (bytes === 0) {
-      return '0 B';
+      return '0 KB';
     }
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    const kb = Math.ceil(bytes / 1024);
+    return kb.toLocaleString('en-US') + ' KB';
   };
 
   const formatETA = (seconds: number | null) => {

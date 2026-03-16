@@ -13,5 +13,6 @@ export const RTC_ICE_SERVERS = {
 
 export const CHUNK_SIZE = 64 * 1024; // 64 KB
 
-// When more than 64 MB is buffered, we pause sending.
-export const MAX_BUFFERED_AMOUNT = 64 * 1024 * 1024; // 64 MB
+// When buffer is full, pause sending.
+// Browsers usually have a 16MB hard limit on the send queue, so we pause at 8MB to be safe.
+export const MAX_BUFFERED_AMOUNT = 8 * 1024 * 1024; // 8 MB
