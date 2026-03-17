@@ -17,6 +17,7 @@ export interface TransferProgress {
   totalBytes: number;
   speed: number; // bytes per second
   eta: number | null; // estimated seconds remaining
+  isPaused?: boolean;
 }
 
 export type ConnectionStatus = 'Disconnected' | 'Connecting' | 'Connected' | 'Error';

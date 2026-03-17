@@ -2,11 +2,11 @@
 
 import React, { useState, useRef } from 'react';
 import { useWebRTC } from '@/hooks/useWebRTC';
-import { Upload, Download, UploadCloud, CheckCircle, XCircle, ArrowRightCircle, Loader2 } from 'lucide-react';
+import { Upload, Download, UploadCloud, CheckCircle, XCircle, ArrowRightCircle, Loader2, PauseCircle, PlayCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function TransferContainer() {
-  const { status, progress, sendFile, isReceiving, cancelTransfer } = useWebRTC();
+  const { status, progress, sendFile, isReceiving, cancelTransfer, pauseTransfer, resumeTransfer, isPaused } = useWebRTC();
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -167,7 +167,7 @@ export default function TransferContainer() {
                 <span className="text-zinc-200 font-medium whitespace-nowrap">
                   {progress.progress >= 100 
                     ? (isReceiving ? 'Đang xử lý & lưu file...' : 'Đang chờ người nhận xử lý...') 
-                    : isReceiving ? 'Đang nhận' : 'Đang gửi'}
+                    : isPaused ? 'Tạm dừng' : isReceiving ? 'Đang nhận' : 'Đang gửi'}
                 </span>
               </div>
               <span className="text-zinc-400 text-sm font-medium">
@@ -191,6 +191,19 @@ export default function TransferContainer() {
                 <span className="bg-black/30 px-2 py-1 rounded text-purple-300">
                   {formatSpeed(progress.speed)}
                 </span>
+                {!isReceiving && (
+                  <button
+                    onClick={isPaused ? resumeTransfer : pauseTransfer}
+                    className="p-1.5 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 rounded-lg transition-colors group/pause"
+                    title={isPaused ? "Tiếp tục" : "Tạm dừng"}
+                  >
+                    {isPaused ? (
+                      <PlayCircle className="w-5 h-5 group-hover/pause:scale-110 transition-transform" />
+                    ) : (
+                      <PauseCircle className="w-5 h-5 group-hover/pause:scale-110 transition-transform" />
+                    )}
+                  </button>
+                )}
                 <button 
                   onClick={cancelTransfer}
                   className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg transition-colors group/cancel"

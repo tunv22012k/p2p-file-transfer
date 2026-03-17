@@ -2,14 +2,15 @@
 
 import { useWebRTC } from '@/hooks/useWebRTC';
 import { importKeyString } from '@/lib/crypto';
-import { Download, Loader2 } from 'lucide-react';
+import { Download, Loader2, PauseCircle, PlayCircle, XCircle } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 export default function ShareReceiverPage() {
   const { 
     status, progress, connectToPeer, setCryptoKey,
-    incomingFileMetadata, acceptFileTransfer
+    incomingFileMetadata, acceptFileTransfer,
+    cancelTransfer, pauseTransfer, resumeTransfer, isPaused
   } = useWebRTC();
   const pathname = usePathname();
   const [error, setError] = useState('');
@@ -72,7 +73,7 @@ export default function ShareReceiverPage() {
                {progress && (
                  <div>
                     <div className="flex justify-between text-xs mb-1 text-zinc-500">
-                      <span>{progress.progress >= 100 ? 'Đang xử lý & lưu file...' : 'Đang tải...'}</span>
+                      <span>{progress.progress >= 100 ? 'Đang xử lý & lưu file...' : isPaused ? 'Tạm dừng' : 'Đang tải...'}</span>
                       <span>{progress.progress.toFixed(1)}%</span>
                     </div>
                     <div className="w-full h-1.5 bg-black/50 rounded-full overflow-hidden mb-2">
@@ -80,6 +81,16 @@ export default function ShareReceiverPage() {
                         className="h-full bg-blue-500 transition-all duration-300" 
                         style={{width: `${progress.progress}%`}}
                       />
+                    </div>
+                    
+                    <div className="flex justify-end space-x-2 mt-4">
+                      <button 
+                        onClick={cancelTransfer}
+                        className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg transition-colors group/cancel"
+                        title="Hủy tải file"
+                      >
+                        <XCircle className="w-5 h-5 group-hover/cancel:scale-110 transition-transform" />
+                      </button>
                     </div>
                  </div>
                )}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useWebRTC } from '@/hooks/useWebRTC';
-import { Users, FileUp, Loader2, User, ArrowLeft, Check, X, Download } from 'lucide-react';
+import { Users, FileUp, Loader2, User, ArrowLeft, Check, X, Download, PlayCircle, PauseCircle } from 'lucide-react';
 import TransferHistory from '@/components/TransferHistory';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
@@ -13,7 +13,8 @@ function RoomContent() {
     myId, status, progress, sendFile,
     joinRoom, leaveRoom, roomUsers, requestFileSend,
     incomingRequest, answerFileRequest,
-    isReceiving, cancelTransfer, incomingFileMetadata, acceptFileTransfer
+    isReceiving, cancelTransfer, incomingFileMetadata, acceptFileTransfer,
+    pauseTransfer, resumeTransfer, isPaused
   } = useWebRTC();
 
   const pathname = usePathname();
@@ -30,7 +31,10 @@ function RoomContent() {
   const [requestStatus, setRequestStatus] = useState<'idle' | 'pending' | 'accepted' | 'rejected'>('idle');
 
   // Get the display name of the selected user
-  const getUsername = (id: string) => {
+  const getUsername = (id: string | null) => {
+    if (!id) {
+      return 'Unknown';
+    }
     const user = roomUsers.find(u => u.id === id);
     return user?.username || id.slice(0, 8);
   };
@@ -214,8 +218,8 @@ function RoomContent() {
                 {progress ? (
                   <div className="mt-4">
                     <div className="mb-4 flex items-center justify-between">
-                      <span className="text-sm font-medium text-emerald-400 flex items-center">
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Đang truyền...
+                      <span className={`text-sm font-medium flex items-center ${isPaused ? 'text-yellow-400' : 'text-emerald-400'}`}>
+                        {isPaused ? 'Tạm dừng' : <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Đang truyền...</>}
                       </span>
                       <span className="text-sm font-bold text-white">{progress.progress.toFixed(1)}%</span>
                     </div>
@@ -236,7 +240,7 @@ function RoomContent() {
                         </span>
                         <button
                           onClick={cancelTransfer}
-                          className="p-1 px-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg text-[10px] font-medium transition-colors border border-rose-500/20"
+                          className="p-1 px-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg text-xs font-medium transition-colors border border-rose-500/20"
                         >
                           HỦY
                         </button>
@@ -267,8 +271,8 @@ function RoomContent() {
               {progress || requestStatus === 'accepted' ? (
                 <div className="mt-8">
                   <div className="mb-4 flex items-center justify-between">
-                    <span className="text-sm font-medium text-emerald-400 flex items-center">
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Đang truyền...
+                    <span className={`text-sm font-medium flex items-center ${isPaused ? 'text-yellow-400' : 'text-emerald-400'}`}>
+                      {isPaused ? 'Tạm dừng' : <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Đang truyền...</>}
                     </span>
                     {progress && <span className="text-sm font-bold text-white">{progress.progress.toFixed(1)}%</span>}
                   </div>
@@ -288,6 +292,13 @@ function RoomContent() {
                         <span className="bg-black/30 px-2 py-1 rounded text-purple-300">
                           {(progress.speed / 1024 / 1024).toFixed(2)} MB/s
                         </span>
+                        <button
+                          onClick={isPaused ? resumeTransfer : pauseTransfer}
+                          className="p-1.5 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 rounded-lg transition-colors group/pause"
+                          title={isPaused ? "Tiếp tục" : "Tạm dừng"}
+                        >
+                          {isPaused ? <PlayCircle className="w-4 h-4 group-hover/pause:scale-110 transition-transform" /> : <PauseCircle className="w-4 h-4 group-hover/pause:scale-110 transition-transform" />}
+                        </button>
                         <button
                           onClick={cancelTransfer}
                           className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg transition-colors"
