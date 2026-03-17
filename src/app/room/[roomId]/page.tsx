@@ -1,12 +1,13 @@
 'use client';
 
 import { useWebRTC } from '@/hooks/useWebRTC';
-import { Users, FileUp, Loader2, User, ArrowLeft, Check, X, Download, PlayCircle, PauseCircle } from 'lucide-react';
+import { Users, FileUp, Loader2, User, ArrowLeft, Check, X, Download, PlayCircle, PauseCircle, FileText, FolderOpen, PackageOpen, Trash2 } from 'lucide-react';
 import TransferHistory from '@/components/TransferHistory';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState, Suspense } from 'react';
 import { FileMetadata } from '@/types/webrtc';
+import { zipFiles, formatFileSize } from '@/lib/zipUtils';
 
 function RoomContent() {
   const {
@@ -23,9 +24,11 @@ function RoomContent() {
   const username = searchParams.get('name') || '';
 
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
-  const [fileToShare, setFileToShare] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [isZipping, setIsZipping] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   const [isRequesting, setIsRequesting] = useState(false);
   const [requestStatus, setRequestStatus] = useState<'idle' | 'pending' | 'accepted' | 'rejected'>('idle');
@@ -50,9 +53,18 @@ function RoomContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
 
+  const addFiles = (incoming: FileList | File[]) => {
+    const arr = Array.from(incoming);
+    setSelectedFiles(prev => {
+      const existing = new Set(prev.map(f => f.name + f.size));
+      return [...prev, ...arr.filter(f => !existing.has(f.name + f.size))];
+    });
+  };
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      setFileToShare(e.target.files[0]);
+      addFiles(e.target.files);
+      e.target.value = '';
     }
   };
 
@@ -69,9 +81,8 @@ function RoomContent() {
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
-
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      setFileToShare(e.dataTransfer.files[0]);
+      addFiles(e.dataTransfer.files);
     }
   };
 
@@ -101,18 +112,36 @@ function RoomContent() {
     return `Còn khoảng ${parts.join(' ')}`;
   };
 
+  const totalSize = selectedFiles.reduce((s, f) => s + f.size, 0);
+
   const handleSendRequest = async () => {
-    if (!selectedUser || !fileToShare) {
-      return;
+    if (!selectedUser || selectedFiles.length === 0) return;
+
+    let fileToSend: File;
+
+    if (selectedFiles.length === 1) {
+      fileToSend = selectedFiles[0];
+    } else {
+      setIsZipping(true);
+      try {
+        const zipName = selectedFiles[0].webkitRelativePath
+          ? selectedFiles[0].webkitRelativePath.split('/')[0]
+          : 'files';
+        fileToSend = await zipFiles(selectedFiles, zipName);
+      } catch {
+        setIsZipping(false);
+        return;
+      }
+      setIsZipping(false);
     }
 
     setIsRequesting(true);
     setRequestStatus('pending');
 
     const metadata: FileMetadata = {
-      name: fileToShare.name,
-      size: fileToShare.size,
-      type: fileToShare.type,
+      name: fileToSend.name,
+      size: fileToSend.size,
+      type: fileToSend.type,
     };
 
     const accepted = await requestFileSend(selectedUser, metadata);
@@ -120,9 +149,9 @@ function RoomContent() {
     setIsRequesting(false);
     if (accepted) {
       setRequestStatus('accepted');
-      await sendFile(fileToShare);
+      setSelectedFiles([]);
+      await sendFile(fileToSend);
       setRequestStatus('idle');
-      setFileToShare(null);
     } else {
       setRequestStatus('rejected');
       setTimeout(() => setRequestStatus('idle'), 3000);
@@ -312,46 +341,74 @@ function RoomContent() {
                 </div>
               ) : (
                 /* Pre-Transfer View */
-                <div className="space-y-6">
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileSelect}
-                    className="hidden"
-                  />
-                  {fileToShare ? (
-                    <div className="flex items-center justify-between p-4 bg-purple-500/10 border border-purple-500/30 rounded-xl">
-                      <span className="text-purple-300 font-medium truncate pr-4">{fileToShare.name}</span>
-                      <button onClick={() => setFileToShare(null)} className="text-zinc-400 hover:text-white text-sm">Đổi</button>
+                <div className="space-y-4">
+                  {/* Hidden file inputs */}
+                  <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" multiple />
+                  <input type="file" ref={folderInputRef} onChange={handleFileSelect} className="hidden" multiple
+                    // @ts-expect-error webkitdirectory is not a standard attr in all TS defs
+                    webkitdirectory="true" />
+
+                  {/* Drag and drop area */}
+                  <div
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    className={`
+                      w-full flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-2xl transition-all
+                      ${isDragging ? 'border-purple-500 bg-purple-500/10' : 'border-white/20 hover:border-purple-500/50 hover:bg-white/5'}
+                    `}
+                  >
+                    <div className="w-14 h-14 bg-purple-500/10 rounded-2xl flex items-center justify-center mb-3">
+                      <FileUp className="w-7 h-7 text-purple-400" />
                     </div>
-                  ) : (
-                    <div
-                      onDragOver={handleDragOver}
-                      onDragLeave={handleDragLeave}
-                      onDrop={handleDrop}
-                      onClick={() => fileInputRef.current?.click()}
-                      className={`
-                        w-full flex flex-col items-center justify-center p-12 border-2 border-dashed rounded-2xl transition-all cursor-pointer group
-                        ${isDragging
-                          ? 'border-purple-500 bg-purple-500/10'
-                          : 'border-white/20 hover:border-purple-500/50 hover:bg-white/5'
-                        }
-                      `}
-                    >
-                      <div className="w-16 h-16 bg-purple-500/10 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
-                        <FileUp className="w-8 h-8 text-purple-400" />
-                      </div>
-                      <div className="text-center">
-                        <p className="text-lg font-semibold text-white mb-1">
-                          {isDragging ? 'Thả file vào đây' : 'Nhấn hoặc kéo thả file'}
-                        </p>
-                        <p className="text-zinc-400 text-sm">Kéo file vào đây để gửi cho thành viên trong phòng</p>
-                      </div>
-                      {!isDragging && (
-                        <button className="mt-6 px-6 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-medium transition-all shadow-lg shadow-purple-500/20 active:scale-95">
-                          Chọn file gửi
+                    <p className="text-sm font-semibold text-white mb-1">
+                      {isDragging ? 'Thả file vào đây' : 'Nhấn hoặc kéo thả file'}
+                    </p>
+                    <p className="text-zinc-500 text-xs mb-4">Kéo file vào đây để gửi cho thành viên trong phòng</p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 active:scale-95"
+                      >
+                        <FileText className="w-3.5 h-3.5" /> Chọn File
+                      </button>
+                      <button
+                        onClick={() => folderInputRef.current?.click()}
+                        className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 active:scale-95"
+                      >
+                        <FolderOpen className="w-3.5 h-3.5" /> Chọn Thư mục
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Selected file list */}
+                  {selectedFiles.length > 0 && (
+                    <div className="bg-black/20 border border-white/10 rounded-xl overflow-hidden">
+                      <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/5">
+                        <span className="text-xs text-zinc-400">
+                          {selectedFiles.length} file &middot; {formatFileSize(totalSize)}
+                        </span>
+                        <button onClick={() => setSelectedFiles([])} className="text-zinc-500 hover:text-rose-400 text-xs flex items-center gap-1 transition-colors">
+                          <Trash2 className="w-3 h-3" /> Xóa tất cả
                         </button>
-                      )}
+                      </div>
+                      <ul className="max-h-36 overflow-y-auto divide-y divide-white/5">
+                        {selectedFiles.map((file, i) => (
+                          <li key={i} className="flex items-center justify-between px-4 py-2 text-xs hover:bg-white/5 group">
+                            <span className="truncate text-zinc-300 flex items-center gap-1.5">
+                              <FileText className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                              {file.webkitRelativePath || file.name}
+                            </span>
+                            <div className="flex items-center gap-2 shrink-0 ml-2">
+                              <span className="text-zinc-500">{formatFileSize(file.size)}</span>
+                              <button onClick={() => setSelectedFiles(prev => prev.filter((_, j) => j !== i))}
+                                className="opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-rose-400 transition-all">
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   )}
 
@@ -363,11 +420,15 @@ function RoomContent() {
 
                   <button
                     onClick={handleSendRequest}
-                    disabled={!fileToShare || isRequesting}
+                    disabled={selectedFiles.length === 0 || isRequesting || isZipping}
                     className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-4 rounded-xl font-bold transition-colors shadow-lg shadow-purple-900/20 flex justify-center items-center"
                   >
-                    {isRequesting ? (
+                    {isZipping ? (
+                      <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Đang nén file...</>
+                    ) : isRequesting ? (
                       <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Đang chờ {getUsername(selectedUser!)} chấp nhận...</>
+                    ) : selectedFiles.length > 1 ? (
+                      <><PackageOpen className="w-5 h-5 mr-2" /> Gói & Gửi ({selectedFiles.length} file)</>
                     ) : (
                       'Yêu cầu gửi file'
                     )}
