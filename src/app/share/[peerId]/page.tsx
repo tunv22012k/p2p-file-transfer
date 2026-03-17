@@ -72,7 +72,7 @@ export default function ShareReceiverPage() {
                {progress && (
                  <div>
                     <div className="flex justify-between text-xs mb-1 text-zinc-500">
-                      <span>Đang tải...</span>
+                      <span>{progress.progress >= 100 ? 'Đang xử lý & lưu file...' : 'Đang tải...'}</span>
                       <span>{progress.progress.toFixed(1)}%</span>
                     </div>
                     <div className="w-full h-1.5 bg-black/50 rounded-full overflow-hidden mb-2">

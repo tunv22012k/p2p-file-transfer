@@ -792,6 +792,20 @@ export function useWebRTC() {
     toast.info('Đã hủy truyền file.');
   }, [isReceiving, resetPeerConnection]);
 
+  // Prevent accidental tab closure during transfer
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Check if there is an active file transfer in progress
+      if (isTransferringRef.current || isReceiving) {
+        e.preventDefault();
+        e.returnValue = ''; // Required for Chrome/Edge to display the native prompt
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isReceiving]);
+
   return {
     myId,
     status,

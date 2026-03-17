@@ -164,8 +164,10 @@ export default function TransferContainer() {
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center space-x-2">
                 <ArrowRightCircle className={`w-5 h-5 ${isReceiving ? 'text-emerald-400' : 'text-blue-400'}`} />
-                <span className="text-zinc-200 font-medium">
-                  {isReceiving ? 'Đang nhận' : 'Đang gửi'}
+                <span className="text-zinc-200 font-medium whitespace-nowrap">
+                  {progress.progress >= 100 
+                    ? (isReceiving ? 'Đang xử lý & lưu file...' : 'Đang chờ người nhận xử lý...') 
+                    : isReceiving ? 'Đang nhận' : 'Đang gửi'}
                 </span>
               </div>
               <span className="text-zinc-400 text-sm font-medium">

@@ -133,7 +133,7 @@ export default function ShareSenderPage() {
           {progress && (
             <div className="mb-4">
               <div className="flex justify-between text-sm mb-1 text-zinc-400">
-                <span>Đang gửi...</span>
+                <span>{progress.progress >= 100 ? 'Đang chờ người nhận xử lý...' : 'Đang gửi...'}</span>
                 <span>{progress.progress.toFixed(1)}%</span>
               </div>
               <div className="w-full h-2 bg-black/50 rounded-full overflow-hidden">
@@ -153,7 +153,7 @@ export default function ShareSenderPage() {
 
           {progress && (
             <div className="w-full bg-emerald-600/10 text-emerald-400 border border-emerald-500/20 px-6 py-4 rounded-xl font-medium text-center">
-              Đang truyền file... Vui lòng không đóng trang này.
+              {progress.progress >= 100 ? 'Người nhận đang lưu file, chuẩn bị hoàn tất...' : 'Đang truyền file... Vui lòng không đóng trang này.'}
             </div>
           )}
         </div>
