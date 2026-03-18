@@ -77,13 +77,26 @@ function broadcastNearbyUpdate(publicIp) {
 }
 
 io.on('connection', (socket) => {
-  let publicIp = socket.handshake.address;
-  // Normalize localhost for discovery
-  if (publicIp === '::1' || publicIp === '::ffff:127.0.0.1') {
+  const headers = socket.handshake.headers;
+  
+  // Read real client IP from reverse proxy / Cloudflare headers
+  let publicIp = headers['cf-connecting-ip']                          // Cloudflare Tunnel
+              || headers['x-real-ip']                                  // Nginx proxy
+              || (headers['x-forwarded-for'] || '').split(',')[0].trim() // Generic proxy
+              || socket.handshake.address;                             // Direct connection (local dev)
+  
+  // Normalize localhost for local development
+  if (publicIp === '::1' || publicIp === '::ffff:127.0.0.1' || !publicIp) {
     publicIp = '127.0.0.1';
   }
   
   console.log('User connected:', socket.id, 'IP:', publicIp);
+  console.log('  Headers:', JSON.stringify({
+    'cf-connecting-ip': headers['cf-connecting-ip'] || null,
+    'x-forwarded-for': headers['x-forwarded-for'] || null,
+    'x-real-ip': headers['x-real-ip'] || null,
+    rawAddress: socket.handshake.address
+  }));
 
   // Add to IP group
   if (!ipGroups.has(publicIp)) {
