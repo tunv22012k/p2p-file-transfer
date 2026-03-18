@@ -19,8 +19,80 @@ const io = new Server(httpServer, {
 // { roomId: { users: Map<socketId, username> } }
 const rooms = new Map();
 
+// Store for nearby discovery (by Public IP)
+// { publicIp: Set<socketId> }
+const ipGroups = new Map();
+
+function getNearbyUsers(publicIp, excludeSocketId) {
+  const group = ipGroups.get(publicIp);
+  if (!group) return [];
+  
+  const users = [];
+  const toRemove = [];
+
+  for (const id of group) {
+    const targetSocket = io.sockets.sockets.get(id);
+    
+    // Verify socket is still active
+    if (!targetSocket || !targetSocket.connected) {
+      toRemove.push(id);
+      continue;
+    }
+
+    if (id !== excludeSocketId) {
+      let username = targetSocket.customName || `Thiết bị-${id.slice(0, 4)}`;
+      
+      // Fallback to room username
+      if (!targetSocket.customName) {
+        for (const [, usersMap] of rooms.entries()) {
+          if (usersMap.has(id)) {
+            username = usersMap.get(id);
+            break;
+          }
+        }
+      }
+      users.push({ id, username });
+    }
+  }
+
+  // Self-healing: Remove invalid IDs found during traversal
+  if (toRemove.length > 0) {
+    toRemove.forEach(id => group.delete(id));
+    if (group.size === 0) ipGroups.delete(publicIp);
+  }
+
+  return users;
+}
+
+function broadcastNearbyUpdate(publicIp) {
+  const group = ipGroups.get(publicIp);
+  console.log(`Broadcasting update to IP group: ${publicIp}, size: ${group?.size || 0}`);
+  if (!group) return;
+  
+  for (const id of group) {
+    const nearby = getNearbyUsers(publicIp, id);
+    console.log(`Sending nearby list to ${id}:`, nearby);
+    io.to(id).emit('nearby-users', nearby);
+  }
+}
+
 io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
+  let publicIp = socket.handshake.address;
+  // Normalize localhost for discovery
+  if (publicIp === '::1' || publicIp === '::ffff:127.0.0.1') {
+    publicIp = '127.0.0.1';
+  }
+  
+  console.log('User connected:', socket.id, 'IP:', publicIp);
+
+  // Add to IP group
+  if (!ipGroups.has(publicIp)) {
+    ipGroups.set(publicIp, new Set());
+  }
+  ipGroups.get(publicIp).add(socket.id);
+
+  // Immediate broadcast to neighbors
+  broadcastNearbyUpdate(publicIp);
 
   // Send the socket ID to the client
   socket.emit('your-id', socket.id);
@@ -54,6 +126,15 @@ io.on('connection', (socket) => {
       }
     }
     socket.emit('room-users', otherUsers);
+
+    // Update neighbors with the new username
+    broadcastNearbyUpdate(publicIp);
+  });
+
+  socket.on('update-username', (name) => {
+    console.log(`User ${socket.id} updated name to: ${name}`);
+    socket.customName = name;
+    broadcastNearbyUpdate(publicIp);
   });
 
   // Signaling protocol
@@ -110,8 +191,21 @@ io.on('connection', (socket) => {
 
   // Leave handling
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
+    console.log('User disconnected:', socket.id, 'IP:', publicIp);
     
+    // Remove from IP group
+    const group = ipGroups.get(publicIp);
+    if (group) {
+      group.delete(socket.id);
+      console.log(`Removed ${socket.id} from group ${publicIp}. Remaining: ${group.size}`);
+      if (group.size === 0) {
+        ipGroups.delete(publicIp);
+        console.log(`Deleted empty group for IP: ${publicIp}`);
+      } else {
+        broadcastNearbyUpdate(publicIp);
+      }
+    }
+
     // Notify all rooms the user was in
     for (const [roomId, usersMap] of rooms.entries()) {
       if (usersMap.has(socket.id)) {

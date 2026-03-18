@@ -1,8 +1,10 @@
 'use client';
 
 import { useWebRTC } from '@/hooks/useWebRTC';
-import { Users, FileUp, Loader2, User, ArrowLeft, Check, X, Download, PlayCircle, PauseCircle, FileText, FolderOpen, PackageOpen, Trash2 } from 'lucide-react';
+import { Users, FileUp, Loader2, User, ArrowLeft, Check, X, Download, FileText, FolderOpen, PackageOpen, Trash2 } from 'lucide-react';
 import TransferHistory from '@/components/TransferHistory';
+import IncomingRequest from '@/components/IncomingRequest';
+import { PlayCircleIcon, PauseCircleIcon } from '@/components/Icons';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState, Suspense } from 'react';
@@ -162,29 +164,10 @@ function RoomContent() {
     <div className="min-h-screen bg-zinc-950 p-4 pt-12 text-white">
       {/* Toast Notification for Incoming Request */}
       {incomingRequest && (
-        <div className="fixed top-4 right-4 z-50 bg-white/10 backdrop-blur-xl border border-white/20 p-6 rounded-2xl shadow-2xl max-w-sm w-full animate-in slide-in-from-top-4">
-          <h3 className="text-lg font-bold mb-2">📥 File đến</h3>
-          <p className="text-sm text-zinc-300 mb-1">
-            <span className="font-semibold text-purple-400">{incomingRequest.fromUsername}</span> muốn gửi cho bạn:
-          </p>
-          <div className="bg-black/30 p-3 rounded-xl mb-4 text-sm font-medium">
-            {incomingRequest.metadata.name} ({Math.ceil(incomingRequest.metadata.size / 1024).toLocaleString()} KB)
-          </div>
-          <div className="flex space-x-2">
-            <button
-              onClick={() => answerFileRequest(true)}
-              className="flex-1 bg-emerald-600 hover:bg-emerald-500 py-2 rounded-xl flex justify-center transition-colors"
-            >
-              <Check className="w-5 h-5 mr-1" /> Chấp nhận
-            </button>
-            <button
-              onClick={() => answerFileRequest(false)}
-              className="flex-1 bg-rose-600 hover:bg-rose-500 py-2 rounded-xl flex justify-center transition-colors"
-            >
-              <X className="w-5 h-5 mr-1" /> Từ chối
-            </button>
-          </div>
-        </div>
+        <IncomingRequest
+          request={incomingRequest}
+          onAnswer={answerFileRequest}
+        />
       )}
 
       <div className="max-w-4xl mx-auto flex flex-col md:flex-row gap-6">
@@ -326,7 +309,7 @@ function RoomContent() {
                           className="p-1.5 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 rounded-lg transition-colors group/pause"
                           title={isPaused ? "Tiếp tục" : "Tạm dừng"}
                         >
-                          {isPaused ? <PlayCircle className="w-4 h-4 group-hover/pause:scale-110 transition-transform" /> : <PauseCircle className="w-4 h-4 group-hover/pause:scale-110 transition-transform" />}
+                          {isPaused ? <PlayCircleIcon className="w-4 h-4 group-hover/pause:scale-110 transition-transform" /> : <PauseCircleIcon className="w-4 h-4 group-hover/pause:scale-110 transition-transform" />}
                         </button>
                         <button
                           onClick={cancelTransfer}

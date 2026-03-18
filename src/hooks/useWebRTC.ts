@@ -60,6 +60,7 @@ export function useWebRTC() {
 
   const [myId, setMyId] = useState<string>('');
   const [roomUsers, setRoomUsers] = useState<{ id: string; username: string }[]>([]);
+  const [nearbyUsers, setNearbyUsers] = useState<{ id: string; username: string }[]>([]);
 
   const isTransferringRef = useRef(false);
 
@@ -336,6 +337,11 @@ export function useWebRTC() {
 
     socketRef.current.on('your-id', (id) => {
       setMyId(id);
+    });
+
+    socketRef.current.on('nearby-users', (users: { id: string; username: string }[]) => {
+      console.log('Received nearby users:', users);
+      setNearbyUsers(users);
     });
 
     // Room functionality
@@ -916,6 +922,10 @@ export function useWebRTC() {
     leaveRoom,
     connectToPeer,
     roomUsers,
+    nearbyUsers,
+    updateNearbyName: (name: string) => {
+      socketRef.current?.emit('update-username', name);
+    },
     requestFileSend,
     incomingRequest,
     answerFileRequest,
