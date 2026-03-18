@@ -428,7 +428,6 @@ export default function Home() {
           <div className="w-full flex flex-col items-center justify-center p-10 border border-dashed border-white/10 rounded-3xl bg-white/5 backdrop-blur-sm">
             <Loader2 className="w-8 h-8 text-emerald-500 animate-spin mb-4" />
             <p className="text-zinc-400 font-medium">Đang tìm kiếm thiết bị lân cận...</p>
-            <p className="text-zinc-500 text-xs mt-2 text-center max-w-xs">Mở trang này trên thiết bị khác dùng chung mạng WiFi/LAN để kết nối mượt mà như AirDrop.</p>
           </div>
         )}
       </div>
