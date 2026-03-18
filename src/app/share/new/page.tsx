@@ -36,9 +36,12 @@ export default function ShareSenderPage() {
     }
   };
 
+  const hasSentRef = useRef(false);
+
   // Automatically send the file when the receiver connects
   useEffect(() => {
-    if (status === 'Connected' && fileToShare && !progress) {
+    if (status === 'Connected' && fileToShare && !progress && !hasSentRef.current) {
+      hasSentRef.current = true;
       sendFile(fileToShare);
     }
   }, [status, fileToShare, progress, sendFile]);

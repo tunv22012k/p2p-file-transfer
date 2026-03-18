@@ -540,7 +540,13 @@ export function useWebRTC() {
   };
 
   const acceptFileTransfer = async () => {
-    if (!incomingFileMetadata || !dcRef.current) {
+    if (!incomingFileMetadata) {
+      return;
+    }
+
+    if (!dcRef.current || dcRef.current.readyState !== 'open') {
+      toast.error('Kết nối đã bị ngắt. Vui lòng tải lại trang và thử lại.');
+      setIncomingFileMetadata(null);
       return;
     }
 
@@ -552,8 +558,13 @@ export function useWebRTC() {
     try {
       const writable = await saveFileFallback(incomingFileMetadata.name);
       receiveBufferRef.current = writable;
+      isTransferringRef.current = true;
       if (dcRef.current && dcRef.current.readyState === 'open') {
         dcRef.current.send(JSON.stringify({ type: 'ready' }));
+      } else {
+        toast.error('Kết nối đã bị ngắt trong khi chọn nơi lưu file.');
+        isTransferringRef.current = false;
+        return;
       }
       setIncomingFileMetadata(null); // Clear prompt
     } catch (e: unknown) {
@@ -568,6 +579,10 @@ export function useWebRTC() {
   };
 
   const sendFile = useCallback(async (file: File) => {
+    if (isTransferringRef.current) {
+      return; // Already sending, prevent duplicate calls
+    }
+
     if (!dcRef.current || dcRef.current.readyState !== 'open') {
       toast.error('Kết nối chưa sẵn sàng.');
       return;

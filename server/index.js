@@ -25,14 +25,16 @@ const ipGroups = new Map();
 
 function getNearbyUsers(publicIp, excludeSocketId) {
   const group = ipGroups.get(publicIp);
-  if (!group) return [];
-  
+  if (!group) {
+    return [];
+  }
+
   const users = [];
   const toRemove = [];
 
   for (const id of group) {
     const targetSocket = io.sockets.sockets.get(id);
-    
+
     // Verify socket is still active
     if (!targetSocket || !targetSocket.connected) {
       toRemove.push(id);
@@ -41,7 +43,7 @@ function getNearbyUsers(publicIp, excludeSocketId) {
 
     if (id !== excludeSocketId) {
       let username = targetSocket.customName || `Thiết bị-${id.slice(0, 4)}`;
-      
+
       // Fallback to room username
       if (!targetSocket.customName) {
         for (const [, usersMap] of rooms.entries()) {
@@ -67,8 +69,10 @@ function getNearbyUsers(publicIp, excludeSocketId) {
 function broadcastNearbyUpdate(publicIp) {
   const group = ipGroups.get(publicIp);
   console.log(`Broadcasting update to IP group: ${publicIp}, size: ${group?.size || 0}`);
-  if (!group) return;
-  
+  if (!group) {
+    return;
+  }
+
   for (const id of group) {
     const nearby = getNearbyUsers(publicIp, id);
     console.log(`Sending nearby list to ${id}:`, nearby);
@@ -78,18 +82,18 @@ function broadcastNearbyUpdate(publicIp) {
 
 io.on('connection', (socket) => {
   const headers = socket.handshake.headers;
-  
+
   // Read real client IP from reverse proxy / Cloudflare headers
   let publicIp = headers['cf-connecting-ip']                          // Cloudflare Tunnel
-              || headers['x-real-ip']                                  // Nginx proxy
-              || (headers['x-forwarded-for'] || '').split(',')[0].trim() // Generic proxy
-              || socket.handshake.address;                             // Direct connection (local dev)
-  
+    || headers['x-real-ip']                                  // Nginx proxy
+    || (headers['x-forwarded-for'] || '').split(',')[0].trim() // Generic proxy
+    || socket.handshake.address;                             // Direct connection (local dev)
+
   // Normalize localhost for local development
   if (publicIp === '::1' || publicIp === '::ffff:127.0.0.1' || !publicIp) {
     publicIp = '127.0.0.1';
   }
-  
+
   console.log('User connected:', socket.id, 'IP:', publicIp);
   console.log('  Headers:', JSON.stringify({
     'cf-connecting-ip': headers['cf-connecting-ip'] || null,
@@ -125,12 +129,12 @@ io.on('connection', (socket) => {
     }
     const displayName = username || `User-${socket.id.slice(0, 6)}`;
     rooms.get(roomId).set(socket.id, displayName);
-    
+
     console.log(`User ${displayName} (${socket.id}) joined room ${roomId}`);
 
     // Notify other peers in the room (include username)
     socket.to(roomId).emit('peer-joined', { id: socket.id, username: displayName });
-    
+
     // Send list of existing users to the new user (with usernames)
     const otherUsers = [];
     for (const [id, name] of rooms.get(roomId).entries()) {
@@ -205,7 +209,7 @@ io.on('connection', (socket) => {
   // Leave handling
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id, 'IP:', publicIp);
-    
+
     // Remove from IP group
     const group = ipGroups.get(publicIp);
     if (group) {
