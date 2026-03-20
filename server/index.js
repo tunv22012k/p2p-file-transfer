@@ -29,6 +29,8 @@ function getNearbyUsers(publicIp, excludeSocketId) {
     return [];
   }
 
+  console.log("group", group);
+
   const users = [];
   const toRemove = [];
 
