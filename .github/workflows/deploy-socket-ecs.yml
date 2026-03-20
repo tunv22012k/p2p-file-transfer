@@ -42,7 +42,7 @@ jobs:
     - name: Force ECS to deploy new code (Zero-downtime)
       run: |
         aws ecs update-service \
-          --cluster cluster-p2p-socket-server \
-          --service task-definition-p2p-socket-server-service-3 \
+          --cluster clusterr-p2p-socket-server \
+          --service task-definition-p2p-socket-server-service-2 \
           --force-new-deployment \
           --region ap-southeast-1
