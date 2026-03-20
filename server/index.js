@@ -89,6 +89,8 @@ io.on('connection', (socket) => {
     || (headers['x-forwarded-for'] || '').split(',')[0].trim() // Generic proxy
     || socket.handshake.address;                             // Direct connection (local dev)
 
+  console.log("publicIp", publicIp);
+
   // Normalize localhost for local development
   if (publicIp === '::1' || publicIp === '::ffff:127.0.0.1' || !publicIp) {
     publicIp = '127.0.0.1';
@@ -236,7 +238,7 @@ io.on('connection', (socket) => {
   });
 });
 
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, () => {
   console.log(`Signaling server running on port ${PORT}`);
 });
