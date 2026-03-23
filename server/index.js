@@ -6,6 +6,40 @@ const cors = require('cors');
 
 const app = express();
 app.use(cors());
+
+// Cloudflare Calls TURN credentials endpoint
+const TURN_TOKEN_ID = process.env.TURN_TOKEN_ID || 'edd80bc0681b477ba21a1758e6b123f5';
+const TURN_API_TOKEN = process.env.TURN_API_TOKEN || '6a3da08d35a6483617f85fd6189e248aa76ffb03825efcacdb4402a375293d3f';
+
+app.get('/turn-credentials', async (req, res) => {
+  try {
+    const response = await fetch(
+      `https://rtc.live.cloudflare.com/v1/turn/keys/${TURN_TOKEN_ID}/credentials/generate`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${TURN_API_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ttl: 86400 }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Cloudflare TURN API error:', response.status, errorText);
+      return res.status(502).json({ error: 'Failed to generate TURN credentials' });
+    }
+
+    const data = await response.json();
+    console.log('Generated TURN credentials successfully');
+    res.json(data);
+  } catch (err) {
+    console.error('TURN credentials error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 const httpServer = createServer(app);
 
 const io = new Server(httpServer, {

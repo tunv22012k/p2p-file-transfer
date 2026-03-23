@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { RTC_ICE_SERVERS, CHUNK_SIZE, MAX_BUFFERED_AMOUNT } from '@/lib/webrtc-config';
+import { fetchIceServers, CHUNK_SIZE, MAX_BUFFERED_AMOUNT } from '@/lib/webrtc-config';
 import { ConnectionStatus, FileMetadata, TransferProgress } from '@/types/webrtc';
 import { encryptChunk, decryptChunk, generateKeyString, importKeyString } from '@/lib/crypto';
 import { toast } from 'sonner';
@@ -285,7 +285,7 @@ export function useWebRTC() {
     };
   }, [resetPeerConnection]);
 
-  const initWebRTC = useCallback(() => {
+  const initWebRTC = useCallback(async () => {
     if (pcRef.current) {
       const state = pcRef.current.connectionState;
       if (state === 'closed' || state === 'failed' || state === 'disconnected') {
@@ -297,7 +297,8 @@ export function useWebRTC() {
       }
     }
 
-    const pc = new RTCPeerConnection(RTC_ICE_SERVERS);
+    const iceConfig = await fetchIceServers();
+    const pc = new RTCPeerConnection(iceConfig);
     pcRef.current = pc;
 
     pc.onconnectionstatechange = () => {
@@ -380,7 +381,7 @@ export function useWebRTC() {
     // Link Sharing: Someone opened our link and wants to connect
     socketRef.current.on('incoming-direct-connection', async (peerId) => {
       remotePeerIdRef.current = peerId;
-      const pc = initWebRTC();
+      const pc = await initWebRTC();
       const dc = pc.createDataChannel('fileTransfer');
       setupDataChannel(dc);
 
@@ -396,7 +397,7 @@ export function useWebRTC() {
     // Signaling protocol
     socketRef.current.on('offer', async (data: { from: string; sdp: RTCSessionDescriptionInit }) => {
       remotePeerIdRef.current = data.from;
-      const pc = initWebRTC();
+      const pc = await initWebRTC();
 
       await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
       const answer = await pc.createAnswer();
@@ -519,7 +520,7 @@ export function useWebRTC() {
 
           // Setup WebRTC connection NOW, and wait for it to open before resolving true
           remotePeerIdRef.current = targetPeerId;
-          const pc = initWebRTC();
+          const pc = await initWebRTC();
           const dc = pc.createDataChannel('fileTransfer');
           setupDataChannel(dc);
 

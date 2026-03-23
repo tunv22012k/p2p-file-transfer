@@ -1,18 +1,35 @@
-export const RTC_ICE_SERVERS = {
-  iceServers: [
+const SIGNALING_SERVER_URL =
+  typeof window !== 'undefined'
+    ? window.location.hostname === 'localhost'
+      ? 'http://localhost:3001'
+      : process.env.NEXT_PUBLIC_SIGNALING_URL || window.location.origin
+    : 'http://localhost:3001';
+
+export async function fetchIceServers(): Promise<RTCConfiguration> {
+  // Always include free Google STUN servers
+  const stun = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    {
-      urls: [
-        'turn:turn.cloudflare.com:3478?transport=udp',
-        'turn:turn.cloudflare.com:3478?transport=tcp',
-        'turns:turn.cloudflare.com:5349?transport=tcp'
-      ],
-      username: process.env.NEXT_PUBLIC_TURN_USERNAME || '49d3952601da5078f1fb9f13875f6dcb',
-      credential: process.env.NEXT_PUBLIC_TURN_PASSWORD || '3fd4eb2b4b139938f754eaa5cda88416d50f415e3d0ad3f76dfec20d035d3bd7'
+  ];
+
+  try {
+    const res = await fetch(`${SIGNALING_SERVER_URL}/turn-credentials`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const data = await res.json();
+    // Cloudflare returns { iceServers: { urls: [...], username, credential } }
+    const turnServer = data.iceServers;
+    if (turnServer) {
+      console.log('[ICE] Fetched dynamic TURN credentials');
+      return { iceServers: [...stun, turnServer] };
     }
-  ],
-};
+  } catch (err) {
+    console.warn('[ICE] Failed to fetch TURN credentials, using STUN-only:', err);
+  }
+
+  // Fallback: STUN-only (works on same LAN, may fail cross-network)
+  return { iceServers: stun };
+}
 
 export const CHUNK_SIZE = 64 * 1024; // 64 KB
 
