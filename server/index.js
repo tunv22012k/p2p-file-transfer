@@ -152,6 +152,37 @@ io.on('connection', (socket) => {
   // Send the socket ID to the client
   socket.emit('your-id', socket.id);
 
+  // Generate TURN credentials via Cloudflare API (through socket.io, avoiding HTTP proxy issues)
+  socket.on('get-turn-credentials', async (callback) => {
+    try {
+      const response = await fetch(
+        `https://rtc.live.cloudflare.com/v1/turn/keys/${TURN_TOKEN_ID}/credentials/generate`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${TURN_API_TOKEN}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ ttl: 86400 }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Cloudflare TURN API error:', response.status, errorText);
+        if (typeof callback === 'function') callback({ error: 'Failed to generate TURN credentials' });
+        return;
+      }
+
+      const data = await response.json();
+      console.log('Generated TURN credentials for', socket.id);
+      if (typeof callback === 'function') callback(data);
+    } catch (err) {
+      console.error('TURN credentials error:', err);
+      if (typeof callback === 'function') callback({ error: 'Internal server error' });
+    }
+  });
+
   // For Link Sharing: Direct peer connection
   // When receiver opens the link, they tell the server they want to connect to a specific sender ID
   socket.on('request-direct-connection', (targetPeerId, ack) => {

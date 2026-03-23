@@ -297,7 +297,7 @@ export function useWebRTC() {
       }
     }
 
-    const iceConfig = await fetchIceServers();
+    const iceConfig = await fetchIceServers(socketRef.current);
     const pc = new RTCPeerConnection(iceConfig);
     pcRef.current = pc;
 

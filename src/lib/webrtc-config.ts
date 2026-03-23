@@ -1,27 +1,38 @@
-const SIGNALING_SERVER_URL =
-  typeof window !== 'undefined'
-    ? window.location.hostname === 'localhost'
-      ? 'http://localhost:3001'
-      : process.env.NEXT_PUBLIC_SIGNALING_URL || window.location.origin
-    : 'http://localhost:3001';
+import type { Socket } from 'socket.io-client';
 
-export async function fetchIceServers(): Promise<RTCConfiguration> {
+export async function fetchIceServers(socket: Socket | null): Promise<RTCConfiguration> {
   // Always include free Google STUN servers
-  const stun = [
+  const stun: RTCIceServer[] = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
   ];
 
-  try {
-    const res = await fetch(`${SIGNALING_SERVER_URL}/turn-credentials`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!socket?.connected) {
+    console.warn('[ICE] Socket not connected, using STUN-only');
+    return { iceServers: stun };
+  }
 
-    const data = await res.json();
-    // Cloudflare returns { iceServers: { urls: [...], username, credential } }
-    const turnServer = data.iceServers;
-    if (turnServer) {
-      console.log('[ICE] Fetched dynamic TURN credentials');
-      return { iceServers: [...stun, turnServer] };
+  try {
+    // Fetch TURN credentials through socket.io (same connection that's already working)
+    const data = await new Promise<{ iceServers?: { urls: string[]; username: string; credential: string }; error?: string }>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Timeout')), 5000);
+      socket.emit('get-turn-credentials', (response: { iceServers?: { urls: string[]; username: string; credential: string }; error?: string }) => {
+        clearTimeout(timeout);
+        if (response?.error) {
+          reject(new Error(response.error));
+        } else {
+          resolve(response);
+        }
+      });
+    });
+
+    if (data.iceServers) {
+      console.log('[ICE] Got TURN credentials via socket.io:', {
+        urls: data.iceServers.urls,
+        username: data.iceServers.username ? '***' : 'MISSING',
+        credential: data.iceServers.credential ? '***' : 'MISSING',
+      });
+      return { iceServers: [...stun, data.iceServers] };
     }
   } catch (err) {
     console.warn('[ICE] Failed to fetch TURN credentials, using STUN-only:', err);
