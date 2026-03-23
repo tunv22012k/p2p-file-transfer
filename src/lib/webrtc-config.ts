@@ -32,10 +32,16 @@ export async function fetchIceServers(socket: Socket | null): Promise<RTCConfigu
         username: data.iceServers.username ? '***' : 'MISSING',
         credential: data.iceServers.credential ? '***' : 'MISSING',
       });
+      // Import toast inside function to avoid SSR issues if any, or just use window alert for debugging
+      console.log('Successfully fetched TURN credentials');
       return { iceServers: [...stun, data.iceServers] };
     }
   } catch (err) {
     console.warn('[ICE] Failed to fetch TURN credentials, using STUN-only:', err);
+    // Alert the user we are falling back to STUN
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ice-fallback', { detail: err?.toString() }));
+    }
   }
 
   // Fallback: STUN-only (works on same LAN, may fail cross-network)

@@ -344,7 +344,15 @@ export function useWebRTC() {
 
     socketRef.current.on('disconnect', () => {
       setIsSocketConnected(false);
+      // setMyId(null); // Optional: clear ID on disconnect, but we want to know current state
     });
+
+    const handleIceFallback = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      console.warn('ICE Fallback event:', customEvent.detail);
+      toast.error('Lỗi lấy máy chủ TURN (Relay). Vui lòng kiểm tra lại cấu hình.');
+    };
+    window.addEventListener('ice-fallback', handleIceFallback);
 
     socketRef.current.on('your-id', (id) => {
       setMyId(id);
@@ -437,6 +445,7 @@ export function useWebRTC() {
     });
 
     return () => {
+      window.removeEventListener('ice-fallback', handleIceFallback);
       if (retryIntervalRef.current) {
         clearInterval(retryIntervalRef.current);
         retryIntervalRef.current = null;
