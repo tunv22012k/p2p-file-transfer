@@ -48,6 +48,7 @@ async function saveFileFallback(fileName: string): Promise<WritableStreamRef> {
 
 export function useWebRTC() {
   const [status, setStatus] = useState<ConnectionStatus>('Disconnected');
+  const [isSocketConnected, setIsSocketConnected] = useState(false);
   const [progress, setProgress] = useState<TransferProgress | null>(null);
   const [isReceiving, setIsReceiving] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -334,6 +335,14 @@ export function useWebRTC() {
 
   useEffect(() => {
     socketRef.current = io(SIGNALING_SERVER_URL);
+
+    socketRef.current.on('connect', () => {
+      setIsSocketConnected(true);
+    });
+
+    socketRef.current.on('disconnect', () => {
+      setIsSocketConnected(false);
+    });
 
     socketRef.current.on('your-id', (id) => {
       setMyId(id);
@@ -930,6 +939,7 @@ export function useWebRTC() {
   return {
     myId,
     status,
+    isSocketConnected,
     progress,
     sendFile,
     isReceiving,
