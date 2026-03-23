@@ -83,6 +83,7 @@ export function useWebRTC() {
   const receiveMetadataRef = useRef<FileMetadata | null>(null);
   const receivedSizeRef = useRef<number>(0);
   const transferStartTime = useRef<number>(0);
+  const retryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const resetPeerConnection = useCallback(() => {
     dcRef.current?.close();
@@ -435,6 +436,10 @@ export function useWebRTC() {
     });
 
     return () => {
+      if (retryIntervalRef.current) {
+        clearInterval(retryIntervalRef.current);
+        retryIntervalRef.current = null;
+      }
       socketRef.current?.disconnect();
       pcRef.current?.close();
       dcRef.current?.close();
@@ -451,9 +456,50 @@ export function useWebRTC() {
     // Socket.io will handle the disconnect event on server side
   };
 
-  const connectToPeer = (peerId: string) => {
-    socketRef.current?.emit('request-direct-connection', peerId);
-  };
+
+  const connectToPeer = useCallback((peerId: string) => {
+    // Clear any previous retry
+    if (retryIntervalRef.current) {
+      clearInterval(retryIntervalRef.current);
+      retryIntervalRef.current = null;
+    }
+
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    const tryConnect = () => {
+      if (!socketRef.current?.connected) {
+        console.log('[connectToPeer] Socket not connected, will retry...');
+        return;
+      }
+
+      attempts++;
+      console.log(`[connectToPeer] Attempt ${attempts}/${maxAttempts} to connect to ${peerId}`);
+
+      socketRef.current.emit('request-direct-connection', peerId, (response: { ok: boolean; error?: string }) => {
+        if (response?.ok) {
+          console.log('[connectToPeer] Target found, connection forwarded');
+          // Stop retrying
+          if (retryIntervalRef.current) {
+            clearInterval(retryIntervalRef.current);
+            retryIntervalRef.current = null;
+          }
+        } else {
+          console.log(`[connectToPeer] Target not found (attempt ${attempts}/${maxAttempts})`);
+          if (attempts >= maxAttempts && retryIntervalRef.current) {
+            clearInterval(retryIntervalRef.current);
+            retryIntervalRef.current = null;
+            toast.error('Không tìm thấy người gửi. Link có thể đã hết hạn, hãy yêu cầu link mới.');
+          }
+        }
+      });
+    };
+
+    // First attempt immediately
+    tryConnect();
+    // Retry every 3 seconds
+    retryIntervalRef.current = setInterval(tryConnect, 3000);
+  }, []);
 
   const requestFileSend = (targetPeerId: string, metadata: FileMetadata) => {
     if (isTransferringRef.current) {

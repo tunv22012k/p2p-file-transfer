@@ -120,9 +120,17 @@ io.on('connection', (socket) => {
 
   // For Link Sharing: Direct peer connection
   // When receiver opens the link, they tell the server they want to connect to a specific sender ID
-  socket.on('request-direct-connection', (targetPeerId) => {
+  socket.on('request-direct-connection', (targetPeerId, ack) => {
+    const targetSocket = io.sockets.sockets.get(targetPeerId);
+    if (!targetSocket || !targetSocket.connected) {
+      console.log(`request-direct-connection: target ${targetPeerId} not found or disconnected`);
+      if (typeof ack === 'function') ack({ ok: false, error: 'not-found' });
+      return;
+    }
     // Forward the request to the target peer
     io.to(targetPeerId).emit('incoming-direct-connection', socket.id);
+    console.log(`request-direct-connection: forwarded from ${socket.id} to ${targetPeerId}`);
+    if (typeof ack === 'function') ack({ ok: true });
   });
 
   // For Room Sharing: Join a room with a username

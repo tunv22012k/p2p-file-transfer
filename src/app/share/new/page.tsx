@@ -12,17 +12,25 @@ export default function ShareSenderPage() {
   const [copied, setCopied] = useState(false);
   const [fileToShare, setFileToShare] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const keyStrRef = useRef<string>('');
 
-  // Generate the encryption key and sharing link when connection is ready
+  // Generate the encryption key once, then update link whenever myId changes (socket reconnect)
   useEffect(() => {
-    if (myId && !shareLink) {
-      generateKeyString().then(keyStr => {
-        const link = `${window.location.origin}/share/${myId}#${keyStr}`;
-        setShareLink(link);
-        importKeyString(keyStr).then(key => setCryptoKey(key));
-      });
-    }
-  }, [myId, shareLink, setCryptoKey]);
+    if (!myId) return;
+
+    const updateLink = async () => {
+      if (!keyStrRef.current) {
+        // First time: generate a new key
+        keyStrRef.current = await generateKeyString();
+        const key = await importKeyString(keyStrRef.current);
+        setCryptoKey(key);
+      }
+      const link = `${window.location.origin}/share/${myId}#${keyStrRef.current}`;
+      setShareLink(link);
+    };
+
+    updateLink();
+  }, [myId, setCryptoKey]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(shareLink);
