@@ -14,9 +14,9 @@ export async function fetchIceServers(socket: Socket | null): Promise<RTCConfigu
 
   try {
     // Fetch TURN credentials through socket.io (same connection that's already working)
-    const data = await new Promise<{ iceServers?: { urls: string[]; username: string; credential: string }; error?: string }>((resolve, reject) => {
+    const data = await new Promise<{ iceServers?: { urls: string | string[]; username: string; credential: string }; error?: string }>((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error('Timeout')), 5000);
-      socket.emit('get-turn-credentials', (response: { iceServers?: { urls: string[]; username: string; credential: string }; error?: string }) => {
+      socket.emit('get-turn-credentials', (response: { iceServers?: { urls: string | string[]; username: string; credential: string }; error?: string }) => {
         clearTimeout(timeout);
         if (response?.error) {
           reject(new Error(response.error));
@@ -26,15 +26,30 @@ export async function fetchIceServers(socket: Socket | null): Promise<RTCConfigu
       });
     });
 
-    if (data.iceServers) {
-      console.log('[ICE] Got TURN credentials via socket.io:', {
-        urls: data.iceServers.urls,
-        username: data.iceServers.username ? '***' : 'MISSING',
-        credential: data.iceServers.credential ? '***' : 'MISSING',
-      });
-      // Import toast inside function to avoid SSR issues if any, or just use window alert for debugging
-      console.log('Successfully fetched TURN credentials');
-      return { iceServers: [...stun, data.iceServers] };
+    // DEBUG: Log the raw response
+    console.log('[ICE] Raw response from backend:', JSON.stringify(data));
+
+    if (data.iceServers && data.iceServers.username && data.iceServers.credential) {
+      const urls = Array.isArray(data.iceServers.urls) ? data.iceServers.urls : [data.iceServers.urls];
+
+      const turnServer: RTCIceServer = {
+        urls: urls,
+        username: data.iceServers.username,
+        credential: data.iceServers.credential,
+      };
+
+      const config: RTCConfiguration = { iceServers: [...stun, turnServer] };
+
+      console.log('[ICE] ✅ Final ICE config:', JSON.stringify({
+        totalServers: config.iceServers!.length,
+        turnUrls: urls,
+        hasUsername: !!turnServer.username,
+        hasCredential: !!turnServer.credential,
+      }));
+
+      return config;
+    } else {
+      console.error('[ICE] ❌ Response missing credentials:', data);
     }
   } catch (err) {
     console.warn('[ICE] Failed to fetch TURN credentials, using STUN-only:', err);

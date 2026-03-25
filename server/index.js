@@ -181,18 +181,49 @@ io.on('connection', (socket) => {
       }
 
       const data = await response.json();
-      console.log('Generated TURN credentials for', socket.id);
-      
-      // Cloudflare API wraps the response in a `result` object: { success: true, result: { iceServers: { urls, username, credential } } }
-      if (data && data.success && data.result && data.result.iceServers) {
-        if (typeof callback === 'function') callback({ iceServers: data.result.iceServers });
-      } else if (data && data.iceServers) {
-        // Fallback just in case they change the API structure
-        if (typeof callback === 'function') callback({ iceServers: data.iceServers });
-      } else {
-        console.error('Unexpected Cloudflare TURN API response:', data);
-        if (typeof callback === 'function') callback({ error: 'Invalid response structure from TURN provider' });
+      // DEBUG: Log the FULL raw response from Cloudflare
+      console.log('[TURN] Raw Cloudflare API response:', JSON.stringify(data, null, 2));
+
+      // Extract iceServers from response (handle both wrapped and unwrapped formats)
+      let iceServers = null;
+      if (data?.iceServers) {
+        iceServers = data.iceServers;
       }
+
+      if (!iceServers || !iceServers.username || !iceServers.credential) {
+        console.error('[TURN] Missing credentials in response:', data);
+        if (typeof callback === 'function') callback({ error: 'Missing credentials from TURN API' });
+        return;
+      }
+
+      // Ensure we have comprehensive URL list including port 443 for firewall bypass
+      const baseUrls = Array.isArray(iceServers.urls) ? iceServers.urls : [iceServers.urls];
+      const enhancedUrls = new Set(baseUrls);
+
+      // Add port 443 variants (critical for bypassing corporate firewalls)
+      enhancedUrls.add('turn:turn.cloudflare.com:443?transport=tcp');
+      enhancedUrls.add('turns:turn.cloudflare.com:443?transport=tcp');
+
+      // Also ensure standard ports are included
+      enhancedUrls.add('turn:turn.cloudflare.com:3478?transport=udp');
+      enhancedUrls.add('turn:turn.cloudflare.com:3478?transport=tcp');
+      enhancedUrls.add('turns:turn.cloudflare.com:5349?transport=tcp');
+
+      const result = {
+        iceServers: {
+          urls: Array.from(enhancedUrls),
+          username: iceServers.username,
+          credential: iceServers.credential,
+        }
+      };
+
+      console.log('[TURN] Sending to client:', socket.id, {
+        urls: result.iceServers.urls,
+        username: result.iceServers.username ? '✓ present' : '✗ MISSING',
+        credential: result.iceServers.credential ? '✓ present' : '✗ MISSING',
+      });
+
+      if (typeof callback === 'function') callback(result);
     } catch (err) {
       console.error('TURN credentials error:', err);
       if (typeof callback === 'function') callback({ error: 'Internal server error' });
