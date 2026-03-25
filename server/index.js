@@ -32,8 +32,14 @@ app.get('/turn-credentials', async (req, res) => {
     }
 
     const data = await response.json();
-    console.log('Generated TURN credentials successfully');
-    res.json(data);
+    console.log('Generated TURN credentials successfully via HTTP');
+    if (data && data.success && data.result && data.result.iceServers) {
+      res.json({ iceServers: data.result.iceServers });
+    } else if (data && data.iceServers) {
+      res.json({ iceServers: data.iceServers });
+    } else {
+      res.status(502).json({ error: 'Invalid response from TURN provider' });
+    }
   } catch (err) {
     console.error('TURN credentials error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -176,7 +182,17 @@ io.on('connection', (socket) => {
 
       const data = await response.json();
       console.log('Generated TURN credentials for', socket.id);
-      if (typeof callback === 'function') callback(data);
+      
+      // Cloudflare API wraps the response in a `result` object: { success: true, result: { iceServers: { urls, username, credential } } }
+      if (data && data.success && data.result && data.result.iceServers) {
+        if (typeof callback === 'function') callback({ iceServers: data.result.iceServers });
+      } else if (data && data.iceServers) {
+        // Fallback just in case they change the API structure
+        if (typeof callback === 'function') callback({ iceServers: data.iceServers });
+      } else {
+        console.error('Unexpected Cloudflare TURN API response:', data);
+        if (typeof callback === 'function') callback({ error: 'Invalid response structure from TURN provider' });
+      }
     } catch (err) {
       console.error('TURN credentials error:', err);
       if (typeof callback === 'function') callback({ error: 'Internal server error' });
