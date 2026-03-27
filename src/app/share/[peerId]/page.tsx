@@ -2,7 +2,7 @@
 
 import { useWebRTC } from '@/hooks/useWebRTC';
 import { importKeyString } from '@/lib/crypto';
-import { Download, Loader2, PauseCircle, PlayCircle, XCircle } from 'lucide-react';
+import { Download, Loader2, XCircle } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
@@ -65,8 +65,8 @@ export default function ShareReceiverPage() {
               <div className="flex justify-between items-center mb-4">
                 <span className="text-zinc-400 text-sm">Trạng thái</span>
                 <span className={`text-sm font-medium flex items-center ${status === 'Connected' ? 'text-emerald-400' :
-                    status === 'Connecting' ? 'text-yellow-400' :
-                      'text-zinc-500'
+                  status === 'Connecting' ? 'text-yellow-400' :
+                    'text-zinc-500'
                   }`}>
                   {status === 'Connecting' && <Loader2 className="w-3 h-3 mr-2 animate-spin" />}
                   {status === 'Connected' ? 'Đã kết nối' : status === 'Connecting' ? 'Đang kết nối...' : 'Chưa kết nối'}

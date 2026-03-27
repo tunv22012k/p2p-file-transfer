@@ -16,7 +16,9 @@ export default function ShareSenderPage() {
 
   // Generate the encryption key once, then update link whenever myId changes (socket reconnect)
   useEffect(() => {
-    if (!myId) return;
+    if (!myId) {
+      return;
+    }
 
     const updateLink = async () => {
       if (!keyStrRef.current) {

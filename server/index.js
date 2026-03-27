@@ -245,21 +245,28 @@ io.on('connection', (socket) => {
     if (typeof ack === 'function') ack({ ok: true });
   });
 
-  // For Room Sharing: Join a room with a username
+  // ---- ROOM SHARING FLOW ----
+  // Xử lý khi một người dùng tham gia vào một phòng theo mã roomId
   socket.on('join-room', ({ roomId, username }) => {
+    // 1. Join vào channel của socket.io
     socket.join(roomId);
+    
+    // 2. Cấu trúc lại danh sách người dùng trong bộ nhớ (Map)
     if (!rooms.has(roomId)) {
       rooms.set(roomId, new Map());
     }
+    
+    // Nếu người dùng không nhập tên, tiến hành random một cái tên tự động
     const displayName = username || `User-${socket.id.slice(0, 6)}`;
     rooms.get(roomId).set(socket.id, displayName);
 
     console.log(`User ${displayName} (${socket.id}) joined room ${roomId}`);
 
-    // Notify other peers in the room (include username)
+    // 3. Thông báo cho những người ĐÃ Ở TRONG PHÒNG biết rằng có người mới vào
+    // 'socket.to' sẽ gửi cho tất cả mọi người trong roomId, TRỪ người đang join
     socket.to(roomId).emit('peer-joined', { id: socket.id, username: displayName });
 
-    // Send list of existing users to the new user (with usernames)
+    // 4. Lấy danh sách những người ĐANG Ở SẴN trong phòng và gửi lại cho người mới vào phòng (room-users)
     const otherUsers = [];
     for (const [id, name] of rooms.get(roomId).entries()) {
       if (id !== socket.id) {
@@ -268,17 +275,23 @@ io.on('connection', (socket) => {
     }
     socket.emit('room-users', otherUsers);
 
-    // Update neighbors with the new username
+    // 5. Cập nhật tên mới của người dùng cho tính năng "Thiết bị lân cận"
     broadcastNearbyUpdate(publicIp);
   });
 
+  // ---- RENAME SENDER OVER NETWORK ----
+  // Cho phép người dùng cập nhật lại tên hiển thị bất kỳ lúc nào
   socket.on('update-username', (name) => {
     console.log(`User ${socket.id} updated name to: ${name}`);
-    socket.customName = name;
+    socket.customName = name; // Gắn tên tùy chỉnh vào đối tượng socket hiện tại
+    // Chạy lệnh quét và phát tán lại danh sách thiết bị cho tất cả những máy chung IP internet
     broadcastNearbyUpdate(publicIp);
   });
 
-  // Signaling protocol
+  // ---- WEBRTC SIGNALING PROTOCOL ----
+  // Giao thức trung gian (Signaling) bắt buộc của WebRTC để hai thiết bị chia sẻ thông tin IP kết nối
+  
+  // A. Offer: Thiết bị gửi (Sender) sẽ khởi tạo WebRTC và báo cho Receiver cấu hình kết nối của mình
   socket.on('offer', (data) => {
     io.to(data.to).emit('offer', {
       from: socket.id,
@@ -286,6 +299,7 @@ io.on('connection', (socket) => {
     });
   });
 
+  // B. Answer: Thiết bị nhận (Receiver) sau khi chấp nhận Offer sẽ phản hồi lại thông tin kết nối
   socket.on('answer', (data) => {
     io.to(data.to).emit('answer', {
       from: socket.id,
@@ -293,6 +307,7 @@ io.on('connection', (socket) => {
     });
   });
 
+  // C. ICE Candidates: Các gói tin truyền IP Address thực tế, dùng để tìm đường ngắn nhất (P2P hoặc chui qua TURN server)
   socket.on('ice-candidate', (data) => {
     io.to(data.to).emit('ice-candidate', {
       from: socket.id,
@@ -300,9 +315,11 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Room sharing: Request to send file (include sender username)
+  // ---- FILE REQUEST PROTOCOL ----
+  
+  // Bước 1: Xin phép chuyển file. Máy gửi thông báo cho máy nhận là mình đang muốn gửi file với thông tin metadata.
   socket.on('file-request', (data) => {
-    // Find the sender's username from any room they're in
+    // Tự động tìm kiếm xem người gửi ở phòng nào để lấy chính xác username
     let senderUsername = socket.id;
     for (const [, usersMap] of rooms.entries()) {
       if (usersMap.has(socket.id)) {
@@ -310,7 +327,7 @@ io.on('connection', (socket) => {
         break;
       }
     }
-    // Send a prompt to the receiver
+    // Chuyển tiếp lời yêu cầu (Request) sang cho người nhận, kèm theo tên hiển thị
     io.to(data.to).emit('file-request', {
       from: socket.id,
       fromUsername: senderUsername,
@@ -318,31 +335,36 @@ io.on('connection', (socket) => {
     });
   });
 
+  // Bước 2a: Người nhận nhấn ĐỒNG Ý nhận file
   socket.on('file-request-accepted', (data) => {
     io.to(data.to).emit('file-request-accepted', {
       from: socket.id
     });
   });
 
+  // Bước 2b: Người nhận TỪ CHỐI nhận file
   socket.on('file-request-rejected', (data) => {
     io.to(data.to).emit('file-request-rejected', {
       from: socket.id
     });
   });
 
-  // Leave handling
+  // ---- DISCONNECT HANDLING ----
+  // Xử lý rác hệ thống (Garbage Cleanup) khi người dùng thoát trình duyệt / disconnect mạng
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id, 'IP:', publicIp);
 
-    // Remove from IP group
+    // 1. Xóa socket của người dùng khỏi nhóm mạng (IP group) để ẩn trên thẻ "Thiết bị gần đây"
     const group = ipGroups.get(publicIp);
     if (group) {
       group.delete(socket.id);
       console.log(`Removed ${socket.id} from group ${publicIp}. Remaining: ${group.size}`);
+      // Dọn bộ nhớ nếu không còn ai truy cập ở public ip đó
       if (group.size === 0) {
         ipGroups.delete(publicIp);
         console.log(`Deleted empty group for IP: ${publicIp}`);
       } else {
+        // Gửi tín hiệu thông báo người đó biến mất để UI của những người gần đó tự render lại
         broadcastNearbyUpdate(publicIp);
       }
     }

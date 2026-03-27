@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { historyUtil } from '@/lib/history';
 import { TransferHistoryItem } from '@/types/webrtc';
-import { Clock, File, Download, Upload, CheckCircle2, XCircle, Trash2 } from 'lucide-react';
+import { Clock, Download, Upload, CheckCircle2, XCircle, Trash2 } from 'lucide-react';
 
 export default function TransferHistory() {
   const [history, setHistory] = useState<TransferHistoryItem[]>([]);
@@ -19,7 +19,9 @@ export default function TransferHistory() {
   }, []);
 
   const formatSize = (bytes: number) => {
-    if (bytes === 0) return '0 KB';
+    if (bytes === 0) {
+      return '0 KB';
+    }
     const kb = Math.ceil(bytes / 1024);
     return kb.toLocaleString('en-US') + ' KB';
   };

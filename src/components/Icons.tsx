@@ -1,5 +1,3 @@
-import React from 'react';
-
 export function PlayCircleIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">

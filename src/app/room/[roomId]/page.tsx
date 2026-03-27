@@ -117,7 +117,9 @@ function RoomContent() {
   const totalSize = selectedFiles.reduce((s, f) => s + f.size, 0);
 
   const handleSendRequest = async () => {
-    if (!selectedUser || selectedFiles.length === 0) return;
+    if (!selectedUser || selectedFiles.length === 0) {
+      return;
+    }
 
     let fileToSend: File;
 

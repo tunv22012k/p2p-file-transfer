@@ -59,7 +59,9 @@ export default function TransferContainer() {
   };
 
   const handleSend = async () => {
-    if (selectedFiles.length === 0) return;
+    if (selectedFiles.length === 0) {
+      return;
+    }
     if (status !== 'Connected') {
       toast.info('Vui lòng đợi kết nối với người nhận!');
       return;
@@ -94,7 +96,9 @@ export default function TransferContainer() {
 
   // Human readable speed
   const formatSpeed = (bytesPerSec: number) => {
-    if (bytesPerSec === 0) return '0 B/s';
+    if (bytesPerSec === 0) {
+      return '0 B/s';
+    }
     const k = 1024;
     const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
     const i = Math.floor(Math.log(bytesPerSec) / Math.log(k));
@@ -102,8 +106,12 @@ export default function TransferContainer() {
   };
 
   const formatETA = (seconds: number | null) => {
-    if (seconds === null || seconds === Infinity) return 'Đang tính...';
-    if (seconds < 1) return 'Xong';
+    if (seconds === null || seconds === Infinity) {
+      return 'Đang tính...';
+    }
+    if (seconds < 1) {
+      return 'Xong';
+    }
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
     const s = Math.floor(seconds % 60);

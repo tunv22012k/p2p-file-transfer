@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useRef } from 'react';
-import { Link2, Users, Monitor, ShieldCheck, Zap, Globe, X, FileUp, Loader2, PackageOpen, FileText, FolderOpen, Trash2, Download } from 'lucide-react';
+import { Link2, Users, Monitor, Globe, X, FileUp, Loader2, PackageOpen, FileText, Trash2, Download } from 'lucide-react';
 import { useWebRTC } from '@/hooks/useWebRTC';
 import TransferHistory from '@/components/TransferHistory';
 import IncomingRequest from '@/components/IncomingRequest';
@@ -83,7 +83,9 @@ export default function Home() {
   };
 
   const handleSendRequest = async () => {
-    if (!selectedNearbyPeer || selectedFiles.length === 0) return;
+    if (!selectedNearbyPeer || selectedFiles.length === 0) {
+      return;
+    }
 
     let fileToSend: File;
 
@@ -129,8 +131,12 @@ export default function Home() {
   };
 
   const formatETA = (seconds: number | null) => {
-    if (seconds === null || seconds === Infinity) return 'Đang tính...';
-    if (seconds < 1) return 'Xong';
+    if (seconds === null || seconds === Infinity) {
+      return 'Đang tính...';
+    }
+    if (seconds < 1) {
+      return 'Xong';
+    }
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
     const s = Math.floor(seconds % 60);

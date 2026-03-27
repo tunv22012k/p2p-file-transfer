@@ -1,6 +1,5 @@
 'use client';
 
-import React from 'react';
 import { Check, X, Download } from 'lucide-react';
 import { FileMetadata } from '@/types/webrtc';
 
@@ -29,7 +28,7 @@ export default function IncomingRequest({ request, onAnswer }: IncomingRequestPr
       <p className="text-sm text-zinc-300 mb-3">
         <span className="font-semibold text-white">{request.fromUsername}</span> muốn gửi cho bạn:
       </p>
-      
+
       <div className="bg-black/40 p-4 rounded-2xl mb-6 border border-white/5">
         <p className="text-sm font-medium text-white truncate">{request.metadata.name}</p>
         <p className="text-xs text-zinc-500 mt-1">{formatSize(request.metadata.size)}</p>
@@ -54,7 +53,9 @@ export default function IncomingRequest({ request, onAnswer }: IncomingRequestPr
 }
 
 function formatSize(bytes: number) {
-  if (bytes === 0) return '0 B';
+  if (bytes === 0) {
+    return '0 B';
+  }
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
