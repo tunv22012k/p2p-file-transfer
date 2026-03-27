@@ -1,16 +1,18 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
+// ---- IMPORT THƯ VIỆN KHỞI TẠO CƠ BẢN ----
 const express = require('express');
-const { createServer } = require('http');
-const { Server } = require('socket.io');
-const cors = require('cors');
+const { createServer } = require('http');     // Bọc Express lại thành HTTP server tiêu chuẩn
+const { Server } = require('socket.io');      // Socket.io dùng để chat / WebRTC Signaling theo thời gian thực
+const cors = require('cors');                 // Xử lý Cross-Origin cho phép mọi domain kết nối
 
 const app = express();
 app.use(cors());
 
-// Cloudflare Calls TURN credentials endpoint
+// ---- CẤU HÌNH CLOUDFLARE TURN SERVER ----
 const TURN_TOKEN_ID = process.env.TURN_TOKEN_ID || 'edd80bc0681b477ba21a1758e6b123f5';
 const TURN_API_TOKEN = process.env.TURN_API_TOKEN || '6a3da08d35a6483617f85fd6189e248aa76ffb03825efcacdb4402a375293d3f';
 
+// (API DỰ PHÒNG) Cấp thông tin ICE (TURN/STUN) qua giao thức HTTP GET cổ điển
 app.get('/turn-credentials', async (req, res) => {
   try {
     const response = await fetch(
@@ -46,23 +48,26 @@ app.get('/turn-credentials', async (req, res) => {
   }
 });
 
+// ---- KHỞI TẠO SOCKET.IO SERVER ----
 const httpServer = createServer(app);
 
 const io = new Server(httpServer, {
   cors: {
-    origin: "*", // In production, restrict this to your domain
+    origin: "*", // Chấp nhận mọi nguồn gốc kết nối (Trong thực tế nên giới hạn lại theo domain)
     methods: ["GET", "POST"]
   }
 });
 
-// A simple in-memory store for rooms
-// { roomId: { users: Map<socketId, username> } }
+// ---- QUẢN LÝ BỘ NHỚ (IN-MEMORY STORES) ----
+// Cấu trúc danh sách các Phòng: { Mã_Phòng: Map<SocketID, Tên_Hiển_Thị> }
+// Dùng cho tính năng Chia sẻ cùng phòng (Room Sharing)
 const rooms = new Map();
 
-// Store for nearby discovery (by Public IP)
-// { publicIp: Set<socketId> }
+// Cấu trúc Thiết bị lân cận: { IP_Public: Set<SocketID> }
+// Máy nào trùng dải IP (chung Wi-Fi/4G IP) thì sẽ thấy nhau.
 const ipGroups = new Map();
 
+// Hàm phụ trợ: Lấy danh sách toàn bộ các thành viên CÙNG MỘT MẠNG IP (Trừ người đang truy vấn)
 function getNearbyUsers(publicIp, excludeSocketId) {
   const group = ipGroups.get(publicIp);
   if (!group) {
@@ -77,16 +82,17 @@ function getNearbyUsers(publicIp, excludeSocketId) {
   for (const id of group) {
     const targetSocket = io.sockets.sockets.get(id);
 
-    // Verify socket is still active
+    // Dọn dẹp tự động (Self-heal) nếu socket kia đã hỏng/ngắt kết nối mà chưa kịp gỡ khỏi danh sách
     if (!targetSocket || !targetSocket.connected) {
       toRemove.push(id);
       continue;
     }
 
     if (id !== excludeSocketId) {
+      // Ưu tiên custom name, nếu không tự random theo 4 chữ số ID
       let username = targetSocket.customName || `Thiết bị-${id.slice(0, 4)}`;
 
-      // Fallback to room username
+      // Nếu người đó đang trong phòng, thử lấy tên trong phòng bù đắp cho tên lân cận
       if (!targetSocket.customName) {
         for (const [, usersMap] of rooms.entries()) {
           if (usersMap.has(id)) {
@@ -99,15 +105,18 @@ function getNearbyUsers(publicIp, excludeSocketId) {
     }
   }
 
-  // Self-healing: Remove invalid IDs found during traversal
+  // Self-healing: Tiến hành tháo dỡ các ID hỏng đã lọc ở trên khỏi danh sách IP chung
   if (toRemove.length > 0) {
     toRemove.forEach(id => group.delete(id));
-    if (group.size === 0) ipGroups.delete(publicIp);
+    if (group.size === 0) {
+      ipGroups.delete(publicIp);
+    }
   }
 
   return users;
 }
 
+// Hàm phụ trợ: Nhắc lại hệ thống hãy gửi danh sách thiết bị mới nhất cho MỌI THIẾT BỊ cùng IP đó
 function broadcastNearbyUpdate(publicIp) {
   const group = ipGroups.get(publicIp);
   console.log(`Broadcasting update to IP group: ${publicIp}, size: ${group?.size || 0}`);
@@ -122,14 +131,15 @@ function broadcastNearbyUpdate(publicIp) {
   }
 }
 
+// ---- SỰ KIỆN KHI CÓ MỘT KẾT NỐI MỚI ----
 io.on('connection', (socket) => {
   const headers = socket.handshake.headers;
 
-  // Read real client IP from reverse proxy / Cloudflare headers
-  let publicIp = headers['cf-connecting-ip']                          // Cloudflare Tunnel
+  // Thuật toán quét và lấy Public IP thật của máy khách, xuyên qua các lớp Tường lửa, NGINX, Cloudflare
+  let publicIp = headers['cf-connecting-ip']                 // Cloudflare Tunnel
     || headers['x-real-ip']                                  // Nginx proxy
-    || (headers['x-forwarded-for'] || '').split(',')[0].trim() // Generic proxy
-    || socket.handshake.address;                             // Direct connection (local dev)
+    || (headers['x-forwarded-for'] || '').split(',')[0].trim() // Generic proxy (VD: AWS ALB)
+    || socket.handshake.address;                             // Direct connection (Chạy local nội bộ)
 
   console.log("publicIp", publicIp);
 
@@ -146,19 +156,19 @@ io.on('connection', (socket) => {
     rawAddress: socket.handshake.address
   }));
 
-  // Add to IP group
+  // Thêm cá nhân vào đại gia đình chung IP này
   if (!ipGroups.has(publicIp)) {
     ipGroups.set(publicIp, new Set());
   }
   ipGroups.get(publicIp).add(socket.id);
 
-  // Immediate broadcast to neighbors
+  // Ép toàn bộ các máy khác Load lại thông tin list "lân cận" vì có máy mới vào
   broadcastNearbyUpdate(publicIp);
 
-  // Send the socket ID to the client
+  // Gửi ID Socket cá nhân (định danh) lại cho thiết bị vừa kết nối
   socket.emit('your-id', socket.id);
 
-  // Generate TURN credentials via Cloudflare API (through socket.io, avoiding HTTP proxy issues)
+  // (API CHÍNH) Yêu cầu cấp quyền TURN Server từ Cloudflare và nhồi nhét TCP Port 443 cho nó
   socket.on('get-turn-credentials', async (callback) => {
     try {
       const response = await fetch(
@@ -176,7 +186,9 @@ io.on('connection', (socket) => {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Cloudflare TURN API error:', response.status, errorText);
-        if (typeof callback === 'function') callback({ error: 'Failed to generate TURN credentials' });
+        if (typeof callback === 'function') {
+          callback({ error: 'Failed to generate TURN credentials' });
+        }
         return;
       }
 
@@ -184,7 +196,7 @@ io.on('connection', (socket) => {
       // DEBUG: Log the FULL raw response from Cloudflare
       console.log('[TURN] Raw Cloudflare API response:', JSON.stringify(data, null, 2));
 
-      // Extract iceServers from response (handle both wrapped and unwrapped formats)
+      // Rút trích `iceServers` từ Response thô (Response của Cloudflare hay thay đổi cấu trúc bọc)
       let iceServers = null;
       if (data?.iceServers) {
         iceServers = data.iceServers;
@@ -192,15 +204,19 @@ io.on('connection', (socket) => {
 
       if (!iceServers || !iceServers.username || !iceServers.credential) {
         console.error('[TURN] Missing credentials in response:', data);
-        if (typeof callback === 'function') callback({ error: 'Missing credentials from TURN API' });
+        if (typeof callback === 'function') {
+          callback({ error: 'Missing credentials from TURN API' });
+        }
         return;
       }
 
-      // Ensure we have comprehensive URL list including port 443 for firewall bypass
+      // THỦ THUẬT VƯỢT TƯỜNG LỬA DOANH NGHIỆP:
+      // Các cty thường khóa Port lạ (như UDP 3478 của STUN). Ở đây chúng ta thêm trực tiếp
+      // giao thức TCP trên Port HTTPS (443) ngụy trang dữ liệu P2P thành luồng lướt web bình thường.
       const baseUrls = Array.isArray(iceServers.urls) ? iceServers.urls : [iceServers.urls];
       const enhancedUrls = new Set(baseUrls);
 
-      // Add port 443 variants (critical for bypassing corporate firewalls)
+      // Thêm biến địa chỉ qua TCP trên cổng 443 (RẤT QUAN TRỌNG VÀ MẠU CHỐT)
       enhancedUrls.add('turn:turn.cloudflare.com:443?transport=tcp');
       enhancedUrls.add('turns:turn.cloudflare.com:443?transport=tcp');
 
@@ -223,26 +239,36 @@ io.on('connection', (socket) => {
         credential: result.iceServers.credential ? '✓ present' : '✗ MISSING',
       });
 
-      if (typeof callback === 'function') callback(result);
+      if (typeof callback === 'function') {
+        callback(result);
+      }
     } catch (err) {
       console.error('TURN credentials error:', err);
-      if (typeof callback === 'function') callback({ error: 'Internal server error' });
+      if (typeof callback === 'function') {
+        callback({ error: 'Internal server error' });
+      }
     }
   });
 
-  // For Link Sharing: Direct peer connection
-  // When receiver opens the link, they tell the server they want to connect to a specific sender ID
+  // ---- LINK SHARING FLOW ----
+  // Yêu cầu Môi giới (Broker). Cho phép người nhận truy cập Link hỏi mua đường tới ID của người gửi (có sẵn trên Link).
   socket.on('request-direct-connection', (targetPeerId, ack) => {
     const targetSocket = io.sockets.sockets.get(targetPeerId);
+
+    // Nếu người gửi không truy cập app hay đã đóng tab
     if (!targetSocket || !targetSocket.connected) {
       console.log(`request-direct-connection: target ${targetPeerId} not found or disconnected`);
-      if (typeof ack === 'function') ack({ ok: false, error: 'not-found' });
+      if (typeof ack === 'function') {
+        ack({ ok: false, error: 'not-found' });
+      }
       return;
     }
     // Forward the request to the target peer
     io.to(targetPeerId).emit('incoming-direct-connection', socket.id);
     console.log(`request-direct-connection: forwarded from ${socket.id} to ${targetPeerId}`);
-    if (typeof ack === 'function') ack({ ok: true });
+    if (typeof ack === 'function') {
+      ack({ ok: true });
+    }
   });
 
   // ---- ROOM SHARING FLOW ----
@@ -250,12 +276,12 @@ io.on('connection', (socket) => {
   socket.on('join-room', ({ roomId, username }) => {
     // 1. Join vào channel của socket.io
     socket.join(roomId);
-    
+
     // 2. Cấu trúc lại danh sách người dùng trong bộ nhớ (Map)
     if (!rooms.has(roomId)) {
       rooms.set(roomId, new Map());
     }
-    
+
     // Nếu người dùng không nhập tên, tiến hành random một cái tên tự động
     const displayName = username || `User-${socket.id.slice(0, 6)}`;
     rooms.get(roomId).set(socket.id, displayName);
@@ -290,7 +316,7 @@ io.on('connection', (socket) => {
 
   // ---- WEBRTC SIGNALING PROTOCOL ----
   // Giao thức trung gian (Signaling) bắt buộc của WebRTC để hai thiết bị chia sẻ thông tin IP kết nối
-  
+
   // A. Offer: Thiết bị gửi (Sender) sẽ khởi tạo WebRTC và báo cho Receiver cấu hình kết nối của mình
   socket.on('offer', (data) => {
     io.to(data.to).emit('offer', {
@@ -316,7 +342,7 @@ io.on('connection', (socket) => {
   });
 
   // ---- FILE REQUEST PROTOCOL ----
-  
+
   // Bước 1: Xin phép chuyển file. Máy gửi thông báo cho máy nhận là mình đang muốn gửi file với thông tin metadata.
   socket.on('file-request', (data) => {
     // Tự động tìm kiếm xem người gửi ở phòng nào để lấy chính xác username
